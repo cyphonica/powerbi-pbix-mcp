@@ -1,0 +1,14 @@
+{
+  "name": "Amber",
+  "dataColors": ["#E08A00", "#F2A30F", "#F7C04A", "#A86200", "#FFD37F", "#C77800", "#FBE0A8", "#7A4700", "#D99A2B", "#E6B860"],
+  "background": "#FFFFFF",
+  "foreground": "#5A3A00",
+  "tableAccent": "#E08A00",
+  "good": "#1AAB40",
+  "neutral": "#F7C04A",
+  "bad": "#D64550",
+  "maximum": "#A86200",
+  "center": "#F7C04A",
+  "minimum": "#FDF3E0",
+  "null": "#CBD5DC"
+}

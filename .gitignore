@@ -1,0 +1,15 @@
+# .NET build output
+bin/
+obj/
+*.user
+
+# test artifacts
+TestResults/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# local MCP registration (copy .mcp.json.example and point it at your build)
+.mcp.json

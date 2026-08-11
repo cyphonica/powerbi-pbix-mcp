@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "super-bi": {
+      "command": "dotnet",
+      "args": ["REPLACE_WITH_ABSOLUTE_PATH/src/bin/Release/net8.0/SuperBiMcp.dll"]
+    }
+  }
+}

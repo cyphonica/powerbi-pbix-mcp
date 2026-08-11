@@ -1,0 +1,14 @@
+{
+  "name": "Maroon",
+  "dataColors": ["#7B1E2B", "#9B2D3E", "#BC4A5C", "#5A1620", "#D98A95", "#6E1A26", "#EBC2C8", "#3F0F16", "#A83847", "#C56873"],
+  "background": "#FFFFFF",
+  "foreground": "#3A1119",
+  "tableAccent": "#7B1E2B",
+  "good": "#1AAB40",
+  "neutral": "#BC4A5C",
+  "bad": "#D64550",
+  "maximum": "#5A1620",
+  "center": "#BC4A5C",
+  "minimum": "#FAF0F1",
+  "null": "#CBD5DC"
+}

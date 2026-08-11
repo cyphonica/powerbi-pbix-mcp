@@ -1,0 +1,14 @@
+{
+  "name": "Violet",
+  "dataColors": ["#6B4EC2", "#8264D4", "#A185E4", "#4E348F", "#C0AAF0", "#5A41A8", "#D6C7F6", "#372363", "#9276DC", "#B3A0E8"],
+  "background": "#FFFFFF",
+  "foreground": "#2E1F52",
+  "tableAccent": "#6B4EC2",
+  "good": "#1AAB40",
+  "neutral": "#A185E4",
+  "bad": "#D64550",
+  "maximum": "#4E348F",
+  "center": "#A185E4",
+  "minimum": "#F0EBFA",
+  "null": "#CBD5DC"
+}

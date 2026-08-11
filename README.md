@@ -1,0 +1,95 @@
+# Super BI MCP
+
+An MCP server that gives AI agents **full local Power BI authoring** - the semantic model, the report, and Power Query M - by editing `.pbix` and PBIP/PBIR files directly. Around **420 tools**, backed by ~1,000 automated tests.
+
+Point Claude (or any MCP client) at it and the agent can build a model, write the DAX, lay out the report pages and visuals, transform the Power Query, run a best-practice lint with automatic fixes, and hand you back a finished `.pbix` - all on your machine.
+
+## Why this instead of the other Power BI MCP servers
+
+| | Super BI MCP | Microsoft Power BI Modeling MCP | Community servers |
+|---|---|---|---|
+| Semantic model authoring (TOM) | Yes | Yes | Partial |
+| **Report authoring** (pages, visuals, filters, bookmarks) | Yes - legacy Layout **and** PBIR | No (explicitly out of scope) | Report-only or preview |
+| **Direct `.pbix` editing** | Yes | No - PBIP files only | Rare |
+| Power Query M authoring | Yes - 60+ transform/generator tools | Analyze/refactor only | Rare |
+| Visual formatting | Deterministic property registry for 52 visual types, validated against the Power BI theme schema | n/a | Raw JSON edits by the LLM |
+| Best Practice Analyzer | 89 rules, 28 with automatic fixes, Tabular Editor ruleset import | Loose | Rare |
+| DAX generators | Time-intelligence, ranking, segmentation, calc groups, dynamic RLS, custom calendars and more | n/a | n/a |
+| Works offline, no Fabric account | Yes | Yes (local mode) | Varies |
+
+The short version: Microsoft's official server stops at the semantic model. This one authors the **whole report** too, with deterministic tools instead of asking the LLM to hand-write layout JSON, and it works on the `.pbix` files you actually have.
+
+## Requirements
+
+- Windows x64 (the engine drives the Analysis Services client libraries and, for live-model work, Power BI Desktop)
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- Power BI Desktop - needed for live model editing, bulk refresh, and bake; report-layer and file-level tools work without it
+
+## Quick start
+
+```bash
+git clone <this repo>
+cd super-bi-mcp
+dotnet build src/SuperBiMcp.csproj -c Release
+```
+
+Register it with your MCP client (Claude Code example, `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "super-bi": {
+      "command": "dotnet",
+      "args": ["<absolute path>/src/bin/Release/net8.0/SuperBiMcp.dll"]
+    }
+  }
+}
+```
+
+Then ask your agent to open a `.pbix` and get to work. `docs/automation-capabilities/GENERATED-TOOL-INDEX.md` lists every tool; regenerate it any time with `SuperBiMcp capability-map`.
+
+## CLI modes
+
+The same binary is also a headless factory:
+
+| Command | What it does |
+|---|---|
+| `SuperBiMcp build job.json` | Headless report build from a declarative manifest (single file or batch/glob) |
+| `SuperBiMcp refresh <path-or-glob>` | Bulk-refresh `.pbix` files through Power BI Desktop, one at a time, saving each |
+| `SuperBiMcp scaffold spec.json out/` | In-memory model build to a complete PBIP (TMDL) - no Desktop needed |
+| `SuperBiMcp bake pbip/ out/` | Deploy + refresh a scaffolded model and produce the populated binary DataModel |
+| `SuperBiMcp materialize <solutionId>` | Turn a solution spec + sample data into a starter `.pbix` (bring your own `solutions/` catalog - not bundled) |
+| `SuperBiMcp sentinel-diff before.json after.json` | CI integrity gate over two model snapshots |
+| `SuperBiMcp capability-map --check` | Docs drift gate - fails when the committed tool index no longer matches the code |
+| `SuperBiMcp jobs list` | Inspect the durable job queue used to serialise heavy Desktop work |
+| `SuperBiMcp templates` | Dump the 300 built-in starting-point templates |
+
+## Testing
+
+```bash
+dotnet test tests/SuperBiMcp.Tests/SuperBiMcp.Tests.csproj -c Release
+```
+
+A handful of live-connector smoke tests skip unless you provide credentials via `DAXTEST_*` environment variables. Set `SUPERBI_TEST_SCRATCH` to move test scratch space off your system drive.
+
+## Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `SUPERBI_PROTECTED_PATHS` | `;`-separated directories the DataMashup writer refuses to touch (fence off live folders) |
+| `SUPERBI_TEST_SCRATCH` | Scratch root for the test suite (defaults to the system temp dir) |
+| `SUPERBI_PBIX_SAVER` | Command template that turns a refreshed PBIP into a populated `.pbix` (see `src/Materialize.cs`) |
+| `SUPERBI_AS_SERVER` | Analysis Services instance for `bake` (defaults to an ephemeral private engine) |
+| `DAXOPS_PBI_TOKEN` / `DAXOPS_XMLA_ENDPOINT` / `DAXOPS_XMLA_CATALOG` | Power BI Service / XMLA connectivity for the service-side tools |
+
+## License
+
+Source-available under the **Functional Source License, FSL-1.1-ALv2** (see `LICENSE.md`).
+
+Use it freely for anything internal, personal, educational, or for client/consulting work. You may not offer it, or a product substantially built on it, as a competing commercial product or hosted service. Each release automatically becomes **Apache 2.0 two years after publication**.
+
+This is a curated public mirror of a private development tree; history starts at the first public release and updates land as versioned drops.
+
+## Acknowledgements
+
+See `NOTICE.md` for bundled third-party assets and rule-set attributions.

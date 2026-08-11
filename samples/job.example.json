@@ -1,0 +1,42 @@
+{
+  "_comment": "Headless report factory manifest. Run: SuperBiMcp build job.example.json",
+  "_about": "source = a .pbix that already carries the model (CLOSED in Desktop). The factory patches its report layer and writes output. Map the config fields to your model's tables/measures. recipe = executive | category | crossretailer. Use a 'recipes' array (with clearPages:false) to stack multiple sections.",
+
+  "source": "C:\\path\\to\\Client.pbix",
+  "output": "C:\\path\\to\\Client-report.pbix",
+  "recipe": "category",
+  "verify": true,
+
+  "config": {
+    "title": "Client Brand",
+    "subtitle": "Retailer   -   Category   -   Review",
+    "headline": "$0.00bn  +0.0%",
+    "headlineLabel": "TOTAL SCAN SALES - MAT",
+    "brandColor": "#16365C",
+    "accentColor": "#C9A227",
+    "logoPath": "C:\\path\\to\\logo.png",
+    "canvasWidth": 1280,
+    "canvasHeight": 720,
+
+    "factTable": "Fact_Sales",
+    "brandTable": "Dim_Product", "brandColumn": "Brand",
+    "segmentTable": "Dim_Product", "segmentColumn": "Segment",
+    "dateTable": "Calendar", "dateColumn": "Date",
+    "itemColumn": "ItemDesc",
+
+    "slicers": [
+      { "table": "Period", "column": "Period", "title": "Period" },
+      { "table": "Dim_Product", "column": "Brand", "title": "Brand" },
+      { "table": "Dim_Product", "column": "Segment", "title": "Segment" }
+    ],
+    "measures": {
+      "sales": "Sales (Period)",
+      "volume": "Volume (Period)",
+      "price": "Avg Price (Period)",
+      "growth": "Sales Growth %",
+      "salesTrend": "Sales (window)",
+      "distribution": "Distribution (Period)",
+      "usw": "Avg USW (Period)"
+    }
+  }
+}

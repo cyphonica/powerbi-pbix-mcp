@@ -1,0 +1,14 @@
+{
+  "name": "Graphite",
+  "dataColors": ["#3C4858", "#5A6B82", "#7B8AA0", "#E0A100", "#9AA7BA", "#2A3340", "#C2CCD9", "#4E5D70", "#B98E00", "#8794A6"],
+  "background": "#FFFFFF",
+  "foreground": "#2A3340",
+  "tableAccent": "#E0A100",
+  "good": "#1AAB40",
+  "neutral": "#7B8AA0",
+  "bad": "#D64550",
+  "maximum": "#2A3340",
+  "center": "#7B8AA0",
+  "minimum": "#EEF1F5",
+  "null": "#CBD5DC"
+}

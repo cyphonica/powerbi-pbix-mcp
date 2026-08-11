@@ -1,0 +1,25 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build engine
+        run: dotnet build src/SuperBiMcp.csproj -c Release -v quiet --nologo
+
+      - name: Test
+        run: dotnet test tests/SuperBiMcp.Tests/SuperBiMcp.Tests.csproj -c Release -v quiet --nologo
+
+      - name: Tool-index drift gate
+        run: dotnet src/bin/Release/net8.0/SuperBiMcp.dll capability-map --check

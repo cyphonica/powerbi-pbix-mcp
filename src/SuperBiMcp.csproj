@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>SuperBiMcp</AssemblyName>
+    <RootNamespace>SuperBiMcp</RootNamespace>
+    <!-- MUST stay false: Microsoft.Data.SqlClient refuses to load under globalization-invariant mode
+         ("Globalization Invariant Mode is not supported"), so the SQL Server dialect cannot build with it on.
+         The box (and any Windows host) ships ICU, so real globalization works at no cost. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- expose internal helpers (CloudFileStaging, GraphClient, CappedReadStream) to the test suite only -->
+    <InternalsVisibleTo Include="SuperBiMcp.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- the authoritative Power BI report-theme JSON schema drives the visual-property registry (PropertyCatalog),
+         loaded from the embedded resource at runtime -->
+    <EmbeddedResource Include="Resources\reportThemeSchema-2.155.json" />
+    <!-- a stock base theme (CY24SU06) folded into every generated .pbix so the report renders (the renderer
+         requires a current theme; see ReportLayoutBuilder) -->
+    <EmbeddedResource Include="Resources\CY24SU06.json" />
+    <!-- the selectable palette library (applied as an inline customTheme over the CY24SU06 base) -->
+    <EmbeddedResource Include="Resources\theme-ocean.json" />
+    <EmbeddedResource Include="Resources\theme-graphite.json" />
+    <EmbeddedResource Include="Resources\theme-emerald.json" />
+    <EmbeddedResource Include="Resources\theme-amber.json" />
+    <EmbeddedResource Include="Resources\theme-violet.json" />
+    <EmbeddedResource Include="Resources\theme-maroon.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" Version="1.4.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
+    <PackageReference Include="Microsoft.AnalysisServices.NetCore.retail.amd64" Version="19.84.1" />
+    <PackageReference Include="Microsoft.AnalysisServices.AdomdClient.NetCore.retail.amd64" Version="19.84.1" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <!-- SQL connector ADO.NET drivers (one per dialect; resolved by the SqlConnector dialect -> provider map) -->
+    <PackageReference Include="Npgsql" Version="8.0.9" />
+    <PackageReference Include="MySqlConnector" Version="2.4.0" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.3" />
+    <!-- Windows native WinHTTP/SChannel TLS stack for the connectors: its TLS fingerprint is not flagged by
+         Cloudflare/WAFs (the default SocketsHttpHandler fingerprint is); used by HttpDefaults on Windows. -->
+    <PackageReference Include="System.Net.Http.WinHttpHandler" Version="8.0.0" />
+    <!-- durable job queue (queue.db under the resolved job root). Offline-restorable from the local cache; brings
+         SQLitePCLRaw.bundle_e_sqlite3 2.1.6, which carries a NATIVE e_sqlite3.dll. With no RuntimeIdentifier the
+         native never sits beside SuperBiMcp.dll: it publishes to runtimes\<rid>\native\ and is located at runtime
+         through SuperBiMcp.deps.json. A deploy that ships the flat files only, prunes runtimes\, or drops the
+         .deps.json loads clean and then throws on the FIRST queue open, not at startup. A green build or publish
+         proves nothing about this - only opening a queue from the deployed layout does. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.28" />
+  </ItemGroup>
+
+</Project>

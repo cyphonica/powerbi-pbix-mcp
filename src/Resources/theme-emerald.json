@@ -1,0 +1,14 @@
+{
+  "name": "Emerald",
+  "dataColors": ["#0E8A5F", "#13A06E", "#37C28E", "#0A5E41", "#5FD6AB", "#0C7350", "#9AE7CC", "#063D2A", "#2AB382", "#7FCFB2"],
+  "background": "#FFFFFF",
+  "foreground": "#093C2B",
+  "tableAccent": "#0E8A5F",
+  "good": "#13A06E",
+  "neutral": "#37C28E",
+  "bad": "#D64550",
+  "maximum": "#0A5E41",
+  "center": "#37C28E",
+  "minimum": "#E7F7F1",
+  "null": "#CBD5DC"
+}

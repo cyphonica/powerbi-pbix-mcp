@@ -1,0 +1,14 @@
+{
+  "name": "Ocean",
+  "dataColors": ["#0B6FA4", "#1391C9", "#37B6E0", "#0A4E78", "#5FD0EE", "#0E5C8A", "#9AE3F4", "#063B5C", "#2AA3D6", "#7FBFE0"],
+  "background": "#FFFFFF",
+  "foreground": "#0A2F45",
+  "tableAccent": "#0B6FA4",
+  "good": "#1AAB40",
+  "neutral": "#37B6E0",
+  "bad": "#D64550",
+  "maximum": "#0A4E78",
+  "center": "#37B6E0",
+  "minimum": "#E6F4FB",
+  "null": "#CBD5DC"
+}

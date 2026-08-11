@@ -1,0 +1,4 @@
+OrderId,Customer,Amount,OrderDate,Active
+1001,"Smith, John",1250.50,2024/06/23,true
+1002,Acme Ltd,980,2024/06/24,false
+1003,"O""Brien",1500.75,2024/06/25,true
