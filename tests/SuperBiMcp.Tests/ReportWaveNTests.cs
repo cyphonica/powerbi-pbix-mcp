@@ -620,6 +620,29 @@ public sealed class ReportWaveNTests
         Assert.Equal("'MyBookmark'", (string?)props["bookmark"]!["expr"]!["Literal"]!["Value"]);
     }
 
+    [Fact]
+    public void AddButton_ClearAllSlicers_WritesClearAllSlicersLink_NoTargetKeys()
+    {
+        var (svc, sid, store) = NewReport();
+        string id = Pck(svc.AddActionButtonEx(sid, Page, "Clear filters", "clearAllSlicers", null, null, 0, 0, 120, 40), "visualName");
+        var props = (JsonObject)((JsonArray)SingleVisual(store, sid, id)["vcObjects"]!["visualLink"]!)[0]!["properties"]!;
+        Assert.Equal("'ClearAllSlicers'", (string?)props["type"]!["expr"]!["Literal"]!["Value"]);
+        // a clear-all-slicers button acts on the page's slicers - no destination keys
+        Assert.Null(props["bookmark"]);
+        Assert.Null(props["webUrl"]);
+        Assert.Null(props["navigationSection"]);
+    }
+
+    [Fact]
+    public void AddButton_ApplyAllSlicers_WritesApplyAllSlicersLink()
+    {
+        var (svc, sid, store) = NewReport();
+        string id = Pck(svc.AddActionButtonEx(sid, Page, "Apply", "applyAllSlicers", null, null, 0, 0, 120, 40), "visualName");
+        var props = (JsonObject)((JsonArray)SingleVisual(store, sid, id)["vcObjects"]!["visualLink"]!)[0]!["properties"]!;
+        Assert.Equal("'ApplyAllSlicers'", (string?)props["type"]!["expr"]!["Literal"]!["Value"]);
+        Assert.Null(props["navigationSection"]);
+    }
+
     // ====================================================================== 8. mobile visibility
 
     [Fact]

@@ -1491,11 +1491,11 @@ public static class ReportTools
         => J.Try(() => report.AddTooltipFields(reportSessionId, page, visual, Parse(fields, "Tooltips")));
 
     [McpServerTool(Name = "add_button")]
-    [Description("Add a BUTTON with any action: actionType = bookmark | back | pageNavigation | drillthrough | qna | webUrl. bookmark needs bookmarkName; pageNavigation/drillthrough need a destination page (in destinationOrUrl); webUrl needs a url (in destinationOrUrl); back/qna need neither. Writes the actionButton visualLink the product uses. Returns the new visual id.")]
+    [Description("Add a BUTTON with any action: actionType = bookmark | back | pageNavigation | drillthrough | qna | webUrl | clearAllSlicers | applyAllSlicers. bookmark needs bookmarkName; pageNavigation/drillthrough need a destination page (in destinationOrUrl); webUrl needs a url (in destinationOrUrl); back/qna/clearAllSlicers/applyAllSlicers need neither (clearAllSlicers/applyAllSlicers act on the page's slicers, e.g. a native Clear-all-slicers button). Writes the actionButton visualLink the product uses. Returns the new visual id.")]
     public static string AddButton(ReportService report, string reportSessionId,
         [Description("page name or displayName to place the button on")] string page,
         [Description("button label")] string text,
-        [Description("bookmark | back | pageNavigation | drillthrough | qna | webUrl")] string actionType = "bookmark",
+        [Description("bookmark | back | pageNavigation | drillthrough | qna | webUrl | clearAllSlicers | applyAllSlicers")] string actionType = "bookmark",
         [Description("bookmark name (actionType=bookmark)")] string? bookmarkName = null,
         [Description("destination page (pageNavigation/drillthrough) OR url (webUrl)")] string? destinationOrUrl = null,
         double x = 24, double y = 124, double width = 150, double height = 40)

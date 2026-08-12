@@ -1,8 +1,8 @@
 # Super BI MCP
 
-An MCP server that gives AI agents **full local Power BI authoring** - the semantic model, the report, and Power Query M - by editing `.pbix` and PBIP/PBIR files directly. **478 tools**, backed by ~1,800 automated tests.
+An MCP server that gives AI agents **full local Power BI authoring** - the semantic model, the report, and Power Query M - by editing `.pbix` and PBIP/PBIR files directly. **490 tools**, backed by ~1,800 automated tests.
 
-Point Claude (or any MCP client) at it and the agent can build a model, write the DAX, lay out the report pages and visuals, transform the Power Query, lint and auto-fix best-practice violations, prove the RLS actually filters, rename a column across the model *and* every report binding in one atomic call, screenshot the rendered result out of a running Power BI Desktop, and hand you back a finished `.pbix` - all on your machine.
+Point Claude (or any MCP client) at it and the agent can build a model, write the DAX, lay out the report pages and visuals, transform the Power Query, lint and auto-fix best-practice violations, prove the RLS actually filters, rename a column across the model *and* every report binding in one atomic call, screenshot the rendered result out of a running Power BI Desktop, **evaluate DAX and read table rows out of a closed `.pbix` with no Fabric**, **edit a closed `.pbit` template's model with no Desktop at all**, and hand you back a finished `.pbix` - all on your machine.
 
 ## Why this instead of the other Power BI MCP servers
 

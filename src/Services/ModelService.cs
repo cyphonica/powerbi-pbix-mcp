@@ -1194,8 +1194,10 @@ public sealed partial class ModelService
 
     /// <summary>Open an ADOMD connection, run the query and read up to maxRows rows (maxRows 0 = store
     /// none). countBeyondMax keeps draining the reader so total is the TRUE row count even when the
-    /// stored rows are capped - the RLS harness and the benchmark need the real cardinality.</summary>
-    private static (List<string> cols, List<object?[]> rows, bool truncated, int total) ExecuteDaxRows(
+    /// stored rows are capped - the RLS harness and the benchmark need the real cardinality. internal so
+    /// the engine-backed offline .pbix tools (eval_dax_offline / read_table_offline) reuse the exact same
+    /// exec+serialise against a Desktop they launched, rather than re-implementing it.</summary>
+    internal static (List<string> cols, List<object?[]> rows, bool truncated, int total) ExecuteDaxRows(
         string connectionString, string query, int maxRows, bool countBeyondMax)
     {
         using var conn = new Adomd.AdomdConnection(connectionString);
@@ -1203,7 +1205,18 @@ public sealed partial class ModelService
         using var cmd = conn.CreateCommand();
         cmd.CommandText = query;
         using var rdr = cmd.ExecuteReader();
+        return SerialiseDaxReader(rdr, maxRows, countBeyondMax);
+    }
 
+    /// <summary>The reader -> (columns, rows, truncated, total) serialisation, split out from the
+    /// connection/exec so it is unit-testable against any <see cref="System.Data.IDataReader"/> - a fake,
+    /// or a real in-memory SQLite reader - with no live engine. run_dax, eval_dax_offline and
+    /// read_table_offline all share this exact shaping so an offline result is byte-for-byte the live one.
+    /// maxRows 0 stores no rows; countBeyondMax keeps draining after the cap so total stays the TRUE
+    /// cardinality even when the stored rows are capped.</summary>
+    internal static (List<string> cols, List<object?[]> rows, bool truncated, int total) SerialiseDaxReader(
+        System.Data.IDataReader rdr, int maxRows, bool countBeyondMax)
+    {
         var cols = new List<string>();
         for (int i = 0; i < rdr.FieldCount; i++) cols.Add(rdr.GetName(i));
         var rows = new List<object?[]>();

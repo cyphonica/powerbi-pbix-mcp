@@ -2,7 +2,7 @@
 
 Generated from [McpServerTool] attributes by `SuperBiMcp capability-map` - do not hand-edit.
 
-Total tools: **478**
+Total tools: **490**
 
 | Class | File | Tools |
 |---|---|---|
@@ -12,11 +12,13 @@ Total tools: **478**
 | DesktopBridgeTools | src/Tools/DesktopBridgeTools.cs | 4 |
 | MeasureTools | src/Tools/MeasureTools.cs | 12 |
 | ModelTools | src/Tools/ModelTools.cs | 237 |
+| OfflinePbixTools | src/Tools/OfflinePbixTools.cs | 4 |
 | PbirTools | src/Tools/PbirTools.cs | 13 |
 | PersistTools | src/Tools/PersistTools.cs | 4 |
 | ReportTools | src/Tools/ReportTools.cs | 187 |
 | ServiceTools | src/Tools/ServiceTools.cs | 8 |
 | SourceTools | src/Tools/SourceTools.cs | 2 |
+| TemplateModelTools | src/Tools/TemplateModelTools.cs | 8 |
 
 ## ConnectionTools (3)
 
@@ -312,6 +314,15 @@ Total tools: **478**
 | value_nativequery_folding | Run a native query against a source and KEEP downstream folding alive: Value.NativeQuery(sourceExpr, nativeQuery, params, [EnableFolding=true]). | sessionId:string, table:string, sourceExpr:string, nativeQuery:string, paramsExpr:string?, partitionName:string? |
 | warm_directlake_cache | Warm the Direct Lake cache: run EVALUATE TOPN(1, SELECTCOLUMNS(...)) over the listed columns (or every column on the table) to force them resident, removing the first-query latency. | sessionId:string, table:string, columns:string? |
 
+## OfflinePbixTools (4)
+
+| Tool | Description | Args |
+|---|---|---|
+| edit_measure_offline | Add or edit a measure on a CLOSED .pbix and save it back to disk. | pbixPath:string, table:string, name:string, expression:string?, formatString:string?, displayFolder:string?, timeoutSec:integer?, saveRetries:integer? |
+| eval_dax_offline | Evaluate a DAX query against a CLOSED .pbix and return the result rows (columns + rows). | pbixPath:string, dax:string, timeoutSec:integer? |
+| get_model_offline | Read the model of a CLOSED .pbix: tables, columns with data types, measures with their DAX, relationships and named M expressions. | pbixPath:string, timeoutSec:integer? |
+| read_table_offline | Read up to topN rows of one table from a CLOSED .pbix (EVALUATE TOPN(topN, 'table')). | pbixPath:string, table:string, topN:integer? |
+
 ## PbirTools (13)
 
 | Tool | Description | Args |
@@ -350,7 +361,7 @@ Total tools: **478**
 | add_between_filter | Add a BETWEEN filter (lo <= field <= hi) at a scope=visual\|page\|report: two Comparisons (GTE + LTE) joined by And. | reportSessionId:string, scope:string, table:string, field:string, lo:string, hi:string, valueType:string?, fieldKind:string?, page:string?, visual:string? |
 | add_bookmark | Add a report-level bookmark that captures a page's visualContainers with the listed visuals HIDDEN and the rest shown (the view-state pattern). | reportSessionId:string, page:string, displayName:string, hiddenVisuals:string?, captureData:boolean? |
 | add_bookmark_navigator | Add a built-in BOOKMARK NAVIGATOR visual that auto-lists the report's bookmarks as buttons (the no-code way to wire a view-switcher). | reportSessionId:string, page:string, x:number?, y:number?, width:number?, height:number? |
-| add_button | Add a BUTTON with any action: actionType = bookmark \| back \| pageNavigation \| drillthrough \| qna \| webUrl. | reportSessionId:string, page:string, text:string, actionType:string?, bookmarkName:string?, destinationOrUrl:string?, x:number?, y:number?, width:number?, height:number? |
+| add_button | Add a BUTTON with any action: actionType = bookmark \| back \| pageNavigation \| drillthrough \| qna \| webUrl \| clearAllSlicers \| applyAllSlicers. | reportSessionId:string, page:string, text:string, actionType:string?, bookmarkName:string?, destinationOrUrl:string?, x:number?, y:number?, width:number?, height:number? |
 | add_card | Add a KPI card showing one measure. | reportSessionId:string, pageName:string, table:string, measure:string, x:number?, y:number?, width:number?, height:number?, title:string? |
 | add_chart | Add a chart. | reportSessionId:string, pageName:string, chartType:string, categoryTable:string, categoryField:string, valueTable:string, valueMeasure:string, seriesTable:string?, seriesField:string?, x:number?, y:number?, width:number?, height:number?, title:string? |
 | add_deneb_visual | Add a DENEB (Vega / Vega-Lite) custom visual to a page: registers the Deneb guid, adds the visual, binds dataRoles into Deneb's 'values' data role, and writes objects.vega[0].properties (jsonSpec one-lined + single-quoted in a literal, jsonConfig, provider=vega\|vegaLite, renderMode=svg\|canvas, enable* booleans). | reportSessionId:string, page:string, name:string, spec:string, provider:string?, renderMode:string?, config:string?, enableTooltips:boolean?, enableSelection:boolean?, enableHighlight:boolean?, x:number?, y:number?, w:number?, h:number?, dataRoles:string?, visualGuid:string? |
@@ -550,3 +561,16 @@ Total tools: **478**
 |---|---|---|
 | pbix_diff | Semantic diff between two .pbix files or two unpacked source trees (from unpack_to_source): files added/removed/changed, TMDL tables + measures (trees only), report pages + visual counts, and Power Query M queries (.pbix only). | pathA:string, pathB:string |
 | unpack_to_source | Unpack a .pbix into a deterministic, text-only, git-committable source tree: Model/definition (TMDL from the live session model) + Report/ (legacy Layout canonicalised to Layout.json, or the full PBIR definition tree). | sessionId:string, pbixPath:string, outputFolder:string |
+
+## TemplateModelTools (8)
+
+| Tool | Description | Args |
+|---|---|---|
+| add_template_measure | Add a measure to a table in a closed .pbit template's model, editing the DataModelSchema JSON on disk with no Power BI Desktop. | pbitPath:string, table:string, name:string, expression:string, formatString:string?, displayFolder:string? |
+| add_template_relationship | Add a relationship to a closed .pbit template's model, editing the DataModelSchema JSON on disk with no Power BI Desktop. | pbitPath:string, fromTable:string, fromColumn:string, toTable:string, toColumn:string, crossFilteringBehavior:string?, isActive:boolean? |
+| delete_template_measure | Delete a measure from a table in a closed .pbit template's model, editing the DataModelSchema JSON on disk with no Power BI Desktop. | pbitPath:string, table:string, name:string |
+| delete_template_relationship | Delete the relationship whose endpoints match from/to from a closed .pbit template's model, editing the DataModelSchema JSON on disk with no Power BI Desktop. | pbitPath:string, fromTable:string, fromColumn:string, toTable:string, toColumn:string |
+| open_template_model | Read the model of a closed .pbit template's DataModelSchema on disk, with no Power BI Desktop and no engine: returns each table with its columns (name + data type + key properties) and measures (name + DAX expression + display folder), plus the relationships (from/to). | pbitPath:string |
+| save_template_model | Rewrite a closed .pbit template's ZIP with the current DataModelSchema, preserving every other part (Report/Layout, [Content_Types].xml, SecurityBindings, Version, etc.) byte-for-byte - no Power BI Desktop. | pbitPath:string, outPath:string? |
+| set_template_column | Patch properties of an existing column in a closed .pbit template's model - data type, format string, hidden flag, sort-by column and default summarisation - editing the DataModelSchema JSON on disk with no Power BI Desktop. | pbitPath:string, table:string, column:string, dataType:string?, formatString:string?, isHidden:boolean?, sortByColumn:string?, summarizeBy:string? |
+| update_template_measure | Update an existing measure's DAX expression, format string and/or display folder in a closed .pbit template's model, editing the DataModelSchema JSON on disk with no Power BI Desktop. | pbitPath:string, table:string, name:string, expression:string?, formatString:string?, displayFolder:string? |

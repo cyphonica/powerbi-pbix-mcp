@@ -3486,8 +3486,19 @@ public sealed partial class ReportService
                 typeToken = "WebUrl";
                 linkProps["webUrl"] = Lit($"'{destinationOrUrl!.Replace("'", "''")}'");
                 break;
+            case "clearallslicers":
+            case "clearall":
+            case "clear":
+                // acts on the page's slicers - carries no bookmark and no destination
+                typeToken = "ClearAllSlicers";
+                break;
+            case "applyallslicers":
+            case "applyall":
+            case "apply":
+                typeToken = "ApplyAllSlicers";
+                break;
             default:
-                throw new ArgumentException($"unknown actionType '{actionType}' (use bookmark|back|pageNavigation|drillthrough|qna|webUrl).");
+                throw new ArgumentException($"unknown actionType '{actionType}' (use bookmark|back|pageNavigation|drillthrough|qna|webUrl|clearAllSlicers|applyAllSlicers).");
         }
         linkProps["type"] = Lit($"'{typeToken}'");
 

@@ -73,6 +73,8 @@ builder.Services.AddSingleton<SessionStore>();
 builder.Services.AddSingleton<PortDiscovery>();
 builder.Services.AddSingleton<ModelService>();
 builder.Services.AddSingleton<ModelPersistService>();
+builder.Services.AddSingleton<OfflinePbixService>();
+builder.Services.AddSingleton<TemplateModelService>();
 builder.Services.AddSingleton<ReportService>();
 builder.Services.AddSingleton<PbirService>();
 builder.Services.AddSingleton<ExcelService>();
