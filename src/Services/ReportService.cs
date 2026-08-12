@@ -25,7 +25,7 @@ public sealed class ReportLayout
 /// plain JSON, so unlike the model it persists straight to disk - but the .pbix
 /// must be CLOSED in Power BI Desktop while we patch the ZIP.
 /// </summary>
-public sealed class ReportService
+public sealed partial class ReportService
 {
     private readonly SessionStore _sessions;
     private readonly ILogger<ReportService> _log;

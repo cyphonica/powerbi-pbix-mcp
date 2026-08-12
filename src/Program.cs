@@ -77,6 +77,7 @@ builder.Services.AddSingleton<ReportService>();
 builder.Services.AddSingleton<PbirService>();
 builder.Services.AddSingleton<ExcelService>();
 builder.Services.AddSingleton<PropertyCatalog>();
+builder.Services.AddSingleton<DesktopBridge>();
 
 builder.Services
     .AddMcpServer()

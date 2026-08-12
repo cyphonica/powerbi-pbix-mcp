@@ -1767,4 +1767,119 @@ public static class ReportTools
         [Description("the literal substring to find")] string find,
         [Description("the replacement substring")] string replace)
         => J.Try(() => report.RewriteConnectionString(pbixPath, find, replace));
+
+    // ================================================================ Wave G2: read-only audits + read-back
+
+    [McpServerTool(Name = "validate_wireframe")]
+    [Description("READ-ONLY layout lint over visual positions + page size (no fixes applied): visual OVERLAP pairs, OFF-CANVAS placement (negative or beyond the page bounds), tiny/zero-size visuals, z-order anomalies (a data visual rendering ABOVE an overlapping slicer), plus margin/gap statistics per page. Every violation names the existing fixer tool (auto_arrange / align_visuals / tidy_slicer_layout_v2 / move_visual / resize_visual / set_visual_z_order). Accepts a LEGACY reportSessionId (from open_report) OR a PBIR pbirSessionId (from read_pbir) - the same shared geometry checker runs over both readers.")]
+    public static string ValidateWireframe(ReportService report, PbirService pbir,
+        [Description("a reportSessionId (open_report) or pbirSessionId (read_pbir)")] string reportSessionId,
+        [Description("one page (name or displayName); omit for every page")] string? pageName = null)
+        => J.Try(() => reportSessionId.StartsWith("pbir", StringComparison.OrdinalIgnoreCase)
+            ? pbir.ValidateWireframe(reportSessionId, pageName)
+            : report.ValidateWireframe(reportSessionId, pageName));
+
+    [McpServerTool(Name = "audit_theme_compliance")]
+    [Description("READ-ONLY theme lint: walk every visual's objects/vcObjects formatting trees against the report's custom theme (read_theme's defaults) and report hard-coded overrides that fight it - off-palette colour literals, on-palette colours that FREEZE the palette so a theme swap will not restyle them, title font family/size overrides of the theme text classes, and per-visual card-style overrides where the theme's visualStyles already set the look.")]
+    public static string AuditThemeCompliance(ReportService report, string reportSessionId)
+        => J.Try(() => report.AuditThemeCompliance(reportSessionId));
+
+    [McpServerTool(Name = "extract_report_colors")]
+    [Description("READ-ONLY report-wide colour inventory: every hardcoded colour literal across all visuals AND the theme, with the exact locations of each occurrence (theme.dataColors[2], page/visual objects paths). The scouting pass before recolor_report.")]
+    public static string ExtractReportColors(ReportService report, string reportSessionId)
+        => J.Try(() => report.ExtractReportColors(reportSessionId));
+
+    [McpServerTool(Name = "recolor_report")]
+    [Description("Find/replace colour literals across ALL visuals and the theme in one call: colorMap = JSON {\"#OLD\":\"#NEW\", ...}. Handles both the plain theme spelling (#RRGGBB) and the quoted expr spelling ('#RRGGBB') inside visual objects, preserving each occurrence's form. Returns per-colour replacement counts; run save_report to persist.")]
+    public static string RecolorReport(ReportService report, string reportSessionId,
+        [Description("JSON object of oldColour -> newColour hex literals")] string colorMap)
+        => J.Try(() => report.RecolorReport(reportSessionId, colorMap));
+
+    [McpServerTool(Name = "document_report")]
+    [Description("One-call Markdown documentation artifact for a report: pages, every visual (type, position, size, title, field bindings), page/report filter counts, bookmarks and the theme - rendered purely from the existing readers. When outPath is given the Markdown is also written to disk.")]
+    public static string DocumentReport(ReportService report, string reportSessionId,
+        [Description("optional path to write the .md file to")] string? outPath = null)
+        => J.Try(() => report.DocumentReport(reportSessionId, outPath));
+
+    [McpServerTool(Name = "get_report_filters")]
+    [Description("READ-ONLY read-back of the report's filter surface: every report / page / visual-level filter parsed to structured form - scope, table[field], filter type, lock/hide flags, and the decoded condition (values list, comparison op + value, topN, relative date/time, and/or chains). The read partner of the add_*_filter tools.")]
+    public static string GetReportFilters(ReportService report, string reportSessionId)
+        => J.Try(() => report.GetReportFilters(reportSessionId));
+
+    [McpServerTool(Name = "get_report_settings")]
+    [Description("READ-ONLY read-back of the report-level behaviour toggles (config.settings) that set_report_settings writes, decoded to plain values, plus the custom-theme name when one is applied. The read partner of set_report_settings.")]
+    public static string GetReportSettings(ReportService report, string reportSessionId)
+        => J.Try(() => report.GetReportSettings(reportSessionId));
+
+    [McpServerTool(Name = "get_slicer_defaults")]
+    [Description("READ-ONLY read-back of every slicer's selection state: bound field, strictSingleSelect / singleSelect flags, display mode, and any default selection values written as Categorical filters in the slicer's own container. The read partner of set_slicer_selection / fix_slicer_single_select. Scope to one page or omit for all pages.")]
+    public static string GetSlicerDefaults(ReportService report, string reportSessionId,
+        [Description("one page (name or displayName); omit for every page")] string? page = null)
+        => J.Try(() => report.GetSlicerDefaults(reportSessionId, page));
+
+    [McpServerTool(Name = "pbix_doctor")]
+    [Description("READ-ONLY 17-point file-level container scan of a CLOSED .pbix: zip part inventory vs expected parts, Version/DataModel/DataMashup presence and sizes, stale SecurityBindings and DataMashup PermissionBindings, sensitivity-label parts, zero-byte / truncated / duplicate parts, and whether the report part is legacy or PBIR. Never writes.")]
+    public static string PbixDoctorTool(
+        [Description("absolute path to the .pbix")] string pbixPath)
+        => J.Try(() => PbixDoctor.Run(pbixPath));
+
+    [McpServerTool(Name = "audit_datamashup_credentials")]
+    [Description("READ-ONLY credential audit of a .pbix's DataMashup: reports whether the embedded M carries credential material (connection strings with Password=/pwd=/AccountKey=/SAS tokens/etc) and whether a PermissionBindings blob is present. Reports PRESENCE and LOCATION only (indicator, query, line number) - secret values are NEVER echoed.")]
+    public static string AuditDataMashupCredentials(ReportService report,
+        [Description("absolute path to the .pbix")] string pbixPath)
+        => J.Try(() => report.AuditDataMashupCredentials(pbixPath));
+
+    // ============================================================================================
+    //  WAVE G3 REPORT ERGONOMICS - broken-binding repair, visual-type change with role remapping,
+    //  bulk per-visual batches, the query data-role catalogue, and the visual-side field-parameter
+    //  binder. All on the legacy Layout path (the reportSessionId tools).
+    // ============================================================================================
+
+    [McpServerTool(Name = "fix_broken_visuals")]
+    [Description("Repair visual bindings that point at RENAMED or MOVED model fields (found by scan_broken_refs). repairMap = JSON {\"Old Table[Old Field]\":\"New Table[New Field]\", ...}. Rewrites the same binding paths set_visual_fields writes - prototypeQuery From/Select (aliases repointed when the table changed), projections queryRefs, sorts, visual filters, and the conditional-formatting / chrome bindings - plus page and report filters. Returns one row per changed target and lists any repair key that never matched.")]
+    public static string FixBrokenVisuals(ReportService report, string reportSessionId,
+        [Description("JSON object mapping broken refs to replacements: {\"T[F]\":\"T2[F2]\", ...}")] string repairMap)
+        => J.Try(() => report.FixBrokenVisuals(reportSessionId, repairMap));
+
+    [McpServerTool(Name = "change_visual_type")]
+    [Description("Change a visual's TYPE preserving its data bindings, position and applicable formatting. A deprecated target is modernised automatically (card -> cardVisual, table -> tableEx, matrix -> pivotTable). Projection roles are remapped through the curated data-role registry (list_visual_data_roles): same-named roles carry straight over, the rest fall to the first compatible role by kind, and per-role caps drop overflow (reported, never silent). Data-formatting cards the new type does not declare are dropped and reported; chrome (title/background/border) always survives. Sort is cleared - re-apply with set_visual_sort.")]
+    public static string ChangeVisualType(ReportService report, PropertyCatalog catalog, string reportSessionId,
+        [Description("page name or displayName")] string page,
+        [Description("visual name")] string visual,
+        [Description("the new visualType, e.g. lineChart | clusteredBarChart | tableEx (or a deprecated alias: card/table/matrix)")] string newType)
+        => J.Try(() => report.ChangeVisualType(reportSessionId, page, visual, newType, catalog));
+
+    [McpServerTool(Name = "bulk_bind_visuals")]
+    [Description("BATCH set_visual_fields: rebind MANY visuals in one call instead of one round-trip each. items = JSON array of {page, visual, bindings:[{role,table,field,kind}, ...]}. One result row per target; a failing item never aborts the rest (partial failure is reported per item, never silently all-or-nothing).")]
+    public static string BulkBindVisuals(ReportService report, string reportSessionId,
+        [Description("JSON array of {page, visual, bindings:[{role,table,field,kind}]}")] string items)
+        => J.Try(() => report.BulkBindVisuals(reportSessionId, items));
+
+    [McpServerTool(Name = "bulk_set_visual_format")]
+    [Description("BATCH set_visual_format: apply formatting to MANY visuals in one call. items = JSON array of {page, visual, format:{vcObjects:{card:{prop:value}}, objects:{card:{prop:value}}}} (format takes the exact set_visual_format formatJson shape). One result row per target; per-item failures reported, the rest still apply.")]
+    public static string BulkSetVisualFormat(ReportService report, string reportSessionId,
+        [Description("JSON array of {page, visual, format:{...}}")] string items)
+        => J.Try(() => report.BulkSetVisualFormat(reportSessionId, items));
+
+    [McpServerTool(Name = "bulk_delete_visuals")]
+    [Description("BATCH delete_visual: delete MANY visuals in one call. items = JSON array of {page, visual}. One result row per target; a missing visual fails its own row only, the rest still delete.")]
+    public static string BulkDeleteVisuals(ReportService report, string reportSessionId,
+        [Description("JSON array of {page, visual}")] string items)
+        => J.Try(() => report.BulkDeleteVisuals(reportSessionId, items));
+
+    [McpServerTool(Name = "list_visual_data_roles")]
+    [Description("The QUERY data roles a visual type takes (Category / Y / Series / Values / Rows / ...), each with what it accepts (Grouping | Measure | GroupingOrMeasure), its per-role field cap, and the deprecated -> modern type mapping (card -> cardVisual, table -> tableEx, matrix -> pivotTable). Role metadata is HAND-CURATED for the mainstream visual types because the bundled theme schema only describes formatting cards, not query roles - coverage is reported honestly (curated | none). The role half of the discovery surface; list_visual_properties is the formatting half.")]
+    public static string ListVisualDataRoles(PropertyCatalog catalog,
+        [Description("a visualType key, e.g. clusteredColumnChart, tableEx, scatterChart (deprecated aliases accepted)")] string visualType)
+        => J.Try(() => VisualDataRoles.ListRoles(visualType, catalog.Knows(VisualDataRoles.Modernize(visualType))));
+
+    [McpServerTool(Name = "bind_field_parameter")]
+    [Description("Bind a FIELD PARAMETER to a visual so it actually swaps fields when opened in Desktop - the visual-side piece the model-side add_field_parameter cannot write. The chosen role's projection becomes the parameter COLUMN with active=true (the dynamic-projection marker) and the prototypeQuery Select swaps to the parameter column; the four model-side pieces (the NAMEOF calculated table, ParameterMetadata, SortByColumn, GroupByColumns) come from add_field_parameter - run it first. role defaults to the visual's measure well (Y, else Values).")]
+    public static string BindFieldParameter(ReportService report, string reportSessionId,
+        [Description("page name or displayName")] string page,
+        [Description("visual name")] string visual,
+        [Description("the field-parameter table name (from add_field_parameter)")] string parameterTable,
+        [Description("the parameter's display column; defaults to the table name (add_field_parameter's convention)")] string? parameterColumn = null,
+        [Description("the projection role to swap (Y | Values | Category | ...); defaults to Y, else Values")] string? role = null)
+        => J.Try(() => report.BindFieldParameter(reportSessionId, page, visual, parameterTable, parameterColumn, role));
 }

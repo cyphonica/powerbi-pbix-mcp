@@ -175,6 +175,10 @@ public sealed class PbirService
         };
     }
 
+    /// <summary>Wave G3 seam: the parsed tree of an OPEN PBIR session, for the cross-layer
+    /// collectors (model_report_usage / scan_broken_refs) that read but never mutate it.</summary>
+    internal PbirModel SessionModel(string pbirSessionId) => _sessions.GetPbir(pbirSessionId).Model;
+
     /// <summary>Parse a PBIR report at <paramref name="path"/> (a .pbix or a PBIP folder) into a PbirModel.</summary>
     internal PbirModel OpenModel(string path)
     {
@@ -356,15 +360,63 @@ public sealed class PbirService
         return new { page = pname, visual = vname, visualJson = vj.DeepClone() };
     }
 
+    // ============================================================================ wireframe lint (PBIR collector)
+
+    /// <summary>validate_wireframe on a PBIR session: collect every page's canvas + visual geometry from
+    /// the per-file tree and hand it to the SAME shared <see cref="WireframeAuditor"/> the legacy path
+    /// uses - one geometry checker over both readers.</summary>
+    public object ValidateWireframe(string pbirSessionId, string? pageName = null)
+        => WireframeAuditor.Audit(CollectWireframePages(pbirSessionId, pageName));
+
+    /// <summary>Collect format-agnostic wireframe geometry from the PBIR tree: position from
+    /// visual.json.position, hidden from isHidden / visual.display.mode, type from visual.visualType.</summary>
+    internal List<WirePage> CollectWireframePages(string pbirSessionId, string? pageName)
+    {
+        var model = _sessions.GetPbir(pbirSessionId).Model;
+        var pageNames = new List<string>();
+        if (pageName != null) pageNames.Add(ResolvePageName(model, pageName));
+        else
+            foreach (var rel in model.Order)
+                if (rel.EndsWith("/page.json", StringComparison.OrdinalIgnoreCase) && model.Entries[rel].Json is JsonObject pj)
+                    pageNames.Add((string?)pj["name"] ?? PageNameFromPath(rel));
+
+        var pages = new List<WirePage>();
+        foreach (var pname in pageNames)
+        {
+            var pj = model.Require($"definition/pages/{pname}/page.json");
+            var visuals = new List<WireVisual>();
+            foreach (var vname in VisualNamesOnPage(model, pname))
+            {
+                var vj = model.Get($"definition/pages/{pname}/visuals/{vname}/visual.json")?.Json;
+                if (vj == null) continue;
+                var pos = vj["position"] as JsonObject;
+                bool hidden = (bool?)vj["isHidden"] == true
+                              || string.Equals((string?)vj["visual"]?["display"]?["mode"], "hidden", StringComparison.OrdinalIgnoreCase);
+                visuals.Add(new WireVisual(
+                    vname, (string?)vj["visual"]?["visualType"],
+                    NumOf(pos?["x"]) ?? 0, NumOf(pos?["y"]) ?? 0,
+                    NumOf(pos?["width"]) ?? 0, NumOf(pos?["height"]) ?? 0,
+                    NumOf(pos?["z"]) ?? 0, hidden));
+            }
+            pages.Add(new WirePage(
+                (string?)pj["displayName"] ?? pname,
+                NumOf(pj["width"]) ?? 1280, NumOf(pj["height"]) ?? 720, visuals));
+        }
+        return pages;
+    }
+
     // ============================================================================ save / round-trip
 
     /// <summary>save_pbir: re-emit ONLY the changed files, preserving every other entry byte-for-byte, GUID
     /// names intact, the DataModel untouched, and SecurityBindings stripped (same discipline as the legacy
     /// writer). For a .pbix this repacks the zip; for a PBIP folder it writes the dirtied files in place.</summary>
     public object Save(string pbirSessionId)
+        => SaveModel(_sessions.GetPbir(pbirSessionId).Model);
+
+    /// <summary>The save engine behind save_pbir, also driven by the Wave G4 rename propagation's
+    /// path target (which owns a PbirModel without a session).</summary>
+    internal object SaveModel(PbirModel model)
     {
-        var session = _sessions.GetPbir(pbirSessionId);
-        var model = session.Model;
         ValidateModel(model);   // catch a malformed save before we touch disk
 
         var changed = model.Order.Where(p => model.Entries[p].Dirty).ToList();
@@ -393,13 +445,21 @@ public sealed class PbirService
         return e.Raw ?? Array.Empty<byte>();
     }
 
-    private static void SaveFolder(PbirModel model)
+    /// <summary>The folder a PBIP model's rel paths are rooted at: the folder that CONTAINS
+    /// definition/ - the source folder itself or a *.Report subfolder of a PBIP project.</summary>
+    internal static string ResolveFolderRoot(PbirModel model)
     {
-        // the report root is where definition/ lives. We resolved it on open into rel paths off that root.
         string root = model.SourcePath;
         if (!Directory.Exists(Path.Combine(root, DefinitionDir)))
             foreach (var sub in Directory.EnumerateDirectories(root))
-                if (Directory.Exists(Path.Combine(sub, DefinitionDir))) { root = sub; break; }
+                if (Directory.Exists(Path.Combine(sub, DefinitionDir))) return sub;
+        return root;
+    }
+
+    private static void SaveFolder(PbirModel model)
+    {
+        // the report root is where definition/ lives. We resolved it on open into rel paths off that root.
+        string root = ResolveFolderRoot(model);
 
         foreach (var rel in model.Order)
         {

@@ -2,17 +2,19 @@
 
 Generated from [McpServerTool] attributes by `SuperBiMcp capability-map` - do not hand-edit.
 
-Total tools: **421**
+Total tools: **478**
 
 | Class | File | Tools |
 |---|---|---|
 | ConnectionTools | src/Tools/ConnectionTools.cs | 3 |
+| CrossLayerTools | src/Tools/CrossLayerTools.cs | 5 |
 | DataTools | src/Tools/DataTools.cs | 3 |
+| DesktopBridgeTools | src/Tools/DesktopBridgeTools.cs | 4 |
 | MeasureTools | src/Tools/MeasureTools.cs | 12 |
-| ModelTools | src/Tools/ModelTools.cs | 206 |
+| ModelTools | src/Tools/ModelTools.cs | 237 |
 | PbirTools | src/Tools/PbirTools.cs | 13 |
 | PersistTools | src/Tools/PersistTools.cs | 4 |
-| ReportTools | src/Tools/ReportTools.cs | 170 |
+| ReportTools | src/Tools/ReportTools.cs | 187 |
 | ServiceTools | src/Tools/ServiceTools.cs | 8 |
 | SourceTools | src/Tools/SourceTools.cs | 2 |
 
@@ -24,6 +26,16 @@ Total tools: **421**
 | get_model_summary | Return the model schema: tables, columns, measures, relationships and named M expressions. | sessionId:string |
 | list_open_models | UNSAFE-FOR-PIPELINE (interactive attach only): lists the Power BI Desktop models a human currently has open on this machine, opening a probe connection into every one of them. | - |
 
+## CrossLayerTools (5)
+
+| Tool | Description | Args |
+|---|---|---|
+| dax_lint | PURE OFFLINE DAX static linter - no live session needed for a raw expression (the gap run_bpa cannot cover: linting a CANDIDATE expression before it is applied). | expression:string?, sessionId:string?, table:string?, measure:string?, extraFunctions:string? |
+| dax_suggest_rewrite | Concrete BEFORE/AFTER rewrites for a DAX expression's lint findings - pure offline, no session. | expression:string, extraFunctions:string? |
+| impact_analysis | BLAST RADIUS of one model object (a measure name or Table[Field]): every model dependant that transitively references it through DAX, plus - when reportSource is given - every report visual touching the object or any dependant measure (page/visual/context). | sessionId:string, objectName:string, reportSource:string? |
+| model_report_usage | CROSS-LAYER usage analysis: join the live semantic model (sessionId) with the report (reportSource = a reportSessionId from open_report, a pbirSessionId from read_pbir, or a path to a PBIR .pbix/PBIP folder) and classify EVERY model field three ways. | sessionId:string, reportSource:string |
+| scan_broken_refs | Flag report bindings that point at MISSING model fields (renamed/deleted tables, columns or measures): every projection, filter, sort and conditional-formatting binding is resolved against the live model, and each broken ref reports where it is bound plus repair suggestions (same field on another table, closest name on the same table). | sessionId:string, reportSource:string |
+
 ## DataTools (3)
 
 | Tool | Description | Args |
@@ -32,11 +44,20 @@ Total tools: **421**
 | stage_excel_to_csv | Stream a large Excel worksheet to a CSV on disk (memory-bounded - does NOT load the workbook into RAM). | xlsxPath:string, sheetName:string?, outCsvPath:string? |
 | unpivot_weekly_csv | Stream-unpivot a WIDE CSV (one column per week, e.g. '23/06/2024_SALES','23/06/2024_VOLUME') into a TALL CSV (keys + WeekKey + one column per measure), one row at a time. | inCsv:string, keyColumns:string, measures:string, outCsv:string?, filterColumn:string?, filterValue:string?, scopeColumn:string? |
 
+## DesktopBridgeTools (4)
+
+| Tool | Description | Args |
+|---|---|---|
+| bridge_reload | UNSAFE-FOR-PIPELINE (interactive attach only): hot-reload the on-disk PBIP/PBIR definition into the open Power BI Desktop (file.reload/v1) without close/reopen - the composition step after save_pbir edits the tree on disk. | pid:integer, reloadModelDefinition:boolean?, force:boolean?, timeoutSec:integer? |
+| bridge_screenshot | UNSAFE-FOR-PIPELINE (interactive attach only): capture pixel-accurate PNG renders of report pages from a RUNNING Power BI Desktop (report.snapshot.capture/v1) and write them to outDir - the render-verification half of the edit/see loop. | pid:integer, outDir:string, pageName:string?, allPages:boolean?, scale:integer?, timeoutSec:integer? |
+| bridge_status | UNSAFE-FOR-PIPELINE (interactive attach only): report every Power BI Desktop instance on this machine through the Desktop Bridge named pipe: bridge availability + manifest methods, the open file path, the unsaved-changes flag, the on-disk PBIR pages and the AS engine ports list_open_models discovers. | connectTimeoutSec:integer? |
+| open_desktop | UNSAFE-FOR-PIPELINE (interactive attach only): launch Power BI Desktop on a .pbix/.pbip (standard MSI install, the WindowsApps Store layout or the Store execution alias; spawn is console-window-free - Desktop shows its own window) and wait until its Desktop Bridge answers or waitForBridgeSec lapses. | path:string, waitForBridgeSec:integer?, exePath:string? |
+
 ## MeasureTools (12)
 
 | Tool | Description | Args |
 |---|---|---|
-| add_measure | Add a DAX measure to a table. | sessionId:string, table:string, name:string, dax:string, formatString:string?, displayFolder:string?, description:string? |
+| add_measure | Add a DAX measure to a table. | sessionId:string?, table:string?, name:string?, dax:string?, formatString:string?, displayFolder:string?, description:string?, pbipFolder:string? |
 | add_narrative_measure | Auto-narrative: create a dynamic DAX text measure like 'Grated, Sliced drove +2.1% growth'. | sessionId:string, homeTable:string, measureName:string, dimTable:string, dimColumn:string, currentMeasure:string, priorMeasure:string, growthMeasure:string, topN:integer? |
 | assert_measure | Evaluate a scalar DAX expression (EVALUATE ROW) and compare the result to an expected value: numeric-vs-numeric within tolerance, otherwise ordinal string compare of the invariant-culture rendering. | sessionId:string, dax:string, expected:string, tolerance:number? |
 | connect_xmla | Connect to a Fabric/Premium XMLA endpoint (powerbi://...) instead of local Power BI Desktop. | endpoint:string?, catalog:string?, accessToken:string? |
@@ -45,11 +66,11 @@ Total tools: **421**
 | run_dax | Run a DAX query against the live model and RETURN the result rows (columns + rows). | sessionId:string, dax:string, maxRows:integer? |
 | run_golden_set | Replay a golden-set file against the live model: every golden is re-evaluated and compared to its baseline (numeric tolerance 1e-6, error-state matching). | sessionId:string, path:string |
 | save_golden_set | Capture a measure-regression baseline: evaluate every model measure (or a comma-separated subset) via EVALUATE ROW and write a deterministic, git-friendly golden-set JSON file (sorted by name, no timestamps). | sessionId:string, path:string, measures:string? |
-| set_measure_properties | Set a measure's metadata that update_measure does not cover: hide/show it (hidden), set its description, and/or rename it (newName). | sessionId:string, table:string, measure:string, hidden:boolean?, description:string?, newName:string? |
+| set_measure_properties | Set a measure's metadata that update_measure does not cover: hide/show it (hidden), set its description, and/or rename it (newName). | sessionId:string, table:string, measure:string, hidden:boolean?, description:string?, newName:string?, propagate:boolean?, reportSource:string? |
 | update_measure | Update an existing measure's DAX, format string or display folder. | sessionId:string, table:string, name:string, dax:string?, formatString:string?, displayFolder:string? |
 | validate_dax | Validate a DAX expression against the live model without changing anything (runs EVALUATE ROW). | sessionId:string, dax:string |
 
-## ModelTools (206)
+## ModelTools (237)
 
 | Tool | Description | Args |
 |---|---|---|
@@ -58,7 +79,7 @@ Total tools: **421**
 | add_calc_group_format | Build a calc group whose items OVERRIDE the displayed format (a currency / % / scale switcher): each item keeps the value (SELECTEDMEASURE()) but reformats it via its own format string. | sessionId:string, table:string, items:string, precedence:integer? |
 | add_calculated_column | Add a DAX calculated column to a table. | sessionId:string, table:string, name:string, dax:string |
 | add_calculated_table | Create a new calculated table from a DAX table expression (e.g. a Calendar via CALENDAR()). | sessionId:string, name:string, dax:string |
-| add_calculation_group | Turn a (single-column) table into a calculation group - the engine for reusable selectors like Time Intelligence (Current/YTD/PY/YoY) applied to ANY measure. | sessionId:string, table:string, precedence:integer? |
+| add_calculation_group | Turn a (single-column) table into a calculation group - the engine for reusable selectors like Time Intelligence (Current/YTD/PY/YoY) applied to ANY measure. | sessionId:string?, table:string?, precedence:integer?, pbipFolder:string? |
 | add_calculation_item | Add a calculation item to a calculation group. | sessionId:string, table:string, name:string, daxExpression:string, ordinal:integer?, formatStringExpression:string? |
 | add_calendar_based_time_intelligence | Add native (non-Gregorian) calendar-based time intelligence: a calendar object on the calendar table's primary date column with a calendarColumnGroup over the associated period columns. | sessionId:string, calendarTable:string, primaryColumn:string, associatedColumns:string |
 | add_conditional_column | Power Query Add Conditional Column: add a column from an ordered if/then/else rule chain (the structured Conditional Column builder). | sessionId:string, table:string, name:string, rules:string, elseResult:string?, valueType:string?, resultType:string?, partitionName:string? |
@@ -73,11 +94,13 @@ Total tools: **421**
 | add_dynamic_title_measure | Author a DYNAMIC TITLE text measure: SELECTEDVALUE over a column with an All/multiple fallback, optionally wrapped in a template ({value} is the placeholder). | sessionId:string, homeTable:string, measureName:string, column:string, template:string?, allLabel:string? |
 | add_dynamic_topn | Generate a dynamic Top N: a what-if N slider, a UNION+Others dimension table, and a rank-or-others measure that buckets everything below rank N into an Others row. | sessionId:string, homeTable:string, dimension:string, measure:string, nMin:number?, nMax:number?, nIncrement:number?, nDefault:number?, othersLabel:string?, topNTableName:string? |
 | add_field_parameter | Create a FIELD PARAMETER - a small calculated table that lets a user swap which field a visual shows. | sessionId:string, name:string, fields:string |
-| add_hierarchy | Create a drill-down hierarchy on a table from an ordered, comma-separated list of existing columns (e.g. "Year,Quarter,Month" or "Segment,Subsegment,ItemDesc"). | sessionId:string, table:string, name:string, levels:string |
+| add_hierarchy | Create a drill-down hierarchy on a table from an ordered, comma-separated list of existing columns (e.g. "Year,Quarter,Month" or "Segment,Subsegment,ItemDesc"). | sessionId:string?, table:string?, name:string?, levels:string?, pbipFolder:string? |
+| add_hierarchy_level | Add a level to an existing hierarchy from a column on the same table. | sessionId:string, table:string, hierarchy:string, column:string, ordinal:integer?, levelName:string? |
 | add_ibcs_variance_measure | Author IBCS variance measure(s) for an actual measure vs a comparison base (PY\|PL\|FC). | sessionId:string, table:string, actualMeasure:string, comparison:string?, kind:string?, comparisonMeasure:string?, applyIbcsFormat:boolean? |
 | add_index_column | Power Query Add Index Column: add a sequential index. | sessionId:string, table:string, name:string?, start:integer?, step:integer?, partitionName:string? |
 | add_m_parameter | Create (or update) a Power Query parameter (the Manage Parameters entry) as a shared expression carrying the IsParameterQuery metadata. | sessionId:string, name:string, type:string?, defaultValue:string?, allowedValues:string? |
 | add_moving_average | Generate a rolling moving-average measure over the last N periods. | sessionId:string, table:string, baseMeasure:string, dateTable:string, dateColumn:string, periods:integer, unit:string? |
+| add_partition | Add an M partition to an existing table (e.g. to split a fact by year). | sessionId:string, table:string, name:string, m:string, mode:string? |
 | add_percent_of_parent | Generate a percent-of-parent measure over a hierarchy. | sessionId:string, table:string, baseMeasure:string, hierarchyColumns:string |
 | add_percent_of_total | Generate a percent-of-total measure for a base measure over a dimension. | sessionId:string, table:string, baseMeasure:string, dimension:string, scope:string? |
 | add_perspective | Create a perspective - a named, focused view that shows only a chosen subset of tables/columns/measures (e.g. a 'Finance' or 'Sales' lens over a large model). | sessionId:string, name:string |
@@ -99,30 +122,42 @@ Total tools: **421**
 | add_table_view_folding | ADVANCED: scaffold a Table.View that implements custom query folding over a non-foldable source. | sessionId:string, table:string, handlers:string, partitionName:string? |
 | add_time_intelligence | Generate the standard time-intelligence measure set for a base measure: YTD, QTD, MTD, PY (prior year), and YoY %. | sessionId:string, baseMeasure:string, dateColumn:string, homeTable:string? |
 | add_time_intelligence_calc_group | Create a time-intelligence calculation group on a table: Current/MTD/QTD/YTD/PY/PYTD/YoY/YoY% items with ordinals, a format-string on YoY%, and DiscourageImplicitMeasures set at model level. | sessionId:string, table:string, dateTable:string, dateColumn:string, precedence:integer? |
-| add_time_intelligence_measures | Generate the full time-intelligence measure set off a base measure: YTD/QTD/MTD, PY/PM, MoM/YoY (+%), PYTD/YOYTD (+%). | sessionId:string, table:string, baseMeasure:string, dateTable:string, dateColumn:string, fiscalYearEnd:string? |
+| add_time_intelligence_measures | Generate the full time-intelligence measure set off a base measure: YTD/QTD/MTD, PY/PM, MoM/YoY (+%), PYTD/YOYTD (+%). | sessionId:string?, table:string?, baseMeasure:string?, dateTable:string?, dateColumn:string?, fiscalYearEnd:string?, pbipFolder:string? |
 | add_to_perspective | Add a table - or a specific column / measure / hierarchy on it - to a perspective. | sessionId:string, perspective:string, table:string, childObject:string? |
 | add_variation | Add a date-navigation Variation to a column: when the column is used in a visual, the model navigates through the named relationship to a default hierarchy on the related (date) table. | sessionId:string, table:string, column:string, relationship:string, defaultHierarchy:string, isDefault:boolean? |
 | add_whatif_parameter | Create a WHAT-IF parameter: a disconnected GENERATESERIES calculated table plus a SELECTEDVALUE measure ([<name> Value]) that picks up the slider selection. | sessionId:string, name:string, min:number, max:number, increment:number, defaultValue:number? |
 | analyze_dependencies | Analyse measure/column dependencies and impact. | sessionId:string, object:string? |
 | analyze_model | Read-only best-practices scan: measures/columns missing format strings, tables in no relationship, etc. | sessionId:string |
 | append_queries | Power Query Append: stack the rows of one or more other queries onto this table (union). | sessionId:string, table:string, otherTables:string, partitionName:string? |
+| apply_rename_plan | APPLY an audit_naming rename plan through the propagating rename machinery: planJson = audit_naming's renamePlan ({renames:[{objectType, table, oldName, newName}]}, a bare array also accepted). | sessionId:string, planJson:string, reportSource:string? |
+| audit_naming | READ-ONLY naming audit over table/column/measure names (technical DIM_/FACT_/TBL_ prefixes, snake_case, camelCase, leading/trailing/doubled spaces, lowercase initials) returning an applyable RENAME PLAN json {renames:[{objectType, table, oldName, newName, reason}]}. | sessionId:string |
 | audit_robustness | The complete 'select a value and the visuals fall over' detector - the pre-delivery reliability gate. | sessionId:string, maxColumns:integer?, maxValuesPerColumn:integer?, maxMeasures:integer?, anchorMeasure:string? |
+| audit_star_schema | READ-ONLY star-schema audit: classify every table (fact / dimension / date / bridge / disconnected) from the relationship topology + column types, then flag the schema smells - snowflaking, bidirectional filters, many-to-many, fact-to-fact relationships, a missing/unmarked date table, and descriptive text columns on fact tables. | sessionId:string |
+| begin_model_transaction | Open a write-transaction on the session's model: subsequent model tools accumulate TOM changes WITHOUT SaveChanges until commit_model_transaction applies them all in one SaveChanges (rollback_model_transaction discards them). | sessionId:string |
 | change_column_type | Power Query Change Type: set the data type of one or more columns. | sessionId:string, table:string, types:string, culture:string?, partitionName:string? |
 | check_directlake_fallback | Diagnose Direct Lake DirectQuery fallbacks: read the fallback-reason DMV and list model objects (calculated columns / calculated tables) that are unsupported in Direct Lake and force a fallback. | sessionId:string |
 | check_relationships | Diagnose 'the visual is blank' issues: for every Fact->Dim relationship, count dimension members that have NO matching fact rows (these render BLANK when a user selects them in a slicer - the #1 cause of an apparently-broken visual) and fact keys with no dimension match. | sessionId:string |
 | column_statistics | Run EVALUATE COLUMNSTATISTICS() - per-column Min / Max / Cardinality / MaxLength profiling for the whole model in one call. | sessionId:string, maxRows:integer? |
 | combine_folder_files | Generate a robust combine-files-from-folder query as a new query: Folder.Files -> filter by extension -> per-file parse -> Table.Combine. | sessionId:string, name:string, folderPath:string, fileType:string?, delimiter:string?, skipRows:integer?, promoteHeaders:boolean?, keepFilename:boolean?, skipErrors:boolean? |
+| commit_model_transaction | Commit the open model transaction: one real SaveChanges applies every accumulated change (and any deferred refresh requests). | sessionId:string |
 | concatenate_with_group_by | Concatenate text within groups: Table.Group + Text.Combine (the inverse of split-to-rows). | sessionId:string, table:string, keys:string, textColumn:string, delimiter:string?, outputColumn:string?, partitionName:string? |
 | conform_dimension | Cross-retailer / total-market builder. | sessionId:string, newTable:string, keyName:string, table1:string, column1:string, table2:string, column2:string |
 | create_csv_table | Create a fully-typed import table from a (staged) CSV in ONE call: reads the header + samples rows to infer each column's type (Int64/Double/String), builds the Csv.Document M, declares EVERY column automatically, and refreshes. | sessionId:string, table:string, csvPath:string, pathExpression:string?, sampleRows:integer? |
-| create_date_table | Create a fully-formed date table in ONE call: Date, Year, Quarter, Month, MonthYear + sort-by columns + a Year>Quarter>Month hierarchy. | sessionId:string, name:string?, dateColumnRef:string?, hierarchy:boolean? |
+| create_date_table | Create a fully-formed date table in ONE call: Date, Year, Quarter, Month, MonthYear + sort-by columns + a Year>Quarter>Month hierarchy. | sessionId:string?, name:string?, dateColumnRef:string?, hierarchy:boolean?, pbipFolder:string? |
+| dax_benchmark | Benchmark a DAX query: optionally clear the engine cache (XMLA ClearCache on the session database), then run the query N times returning {coldMs, warmMs[], rowCount}. | sessionId:string, query:string, runs:integer?, clearCache:boolean? |
 | declare_changed_property | Mark a property as locally CHANGED so a schema sync does not wipe your override on a composite / Direct Lake object (name, isHidden, formatString, summarizeBy etc. | sessionId:string, objectType:string, name:string, property:string, table:string? |
 | define_udf | Define a DAX User-Defined Function (a net-new model object). | sessionId:string, name:string, bodyDax:string, params:string?, returnType:string?, description:string? |
+| delete_calculation_item | Delete a calculation item from a calculation group. | sessionId:string, table:string, name:string |
+| delete_calendar | Delete a table's calendar definition (removes the PBI_Calendar annotation - the Wave R convention while the native calendar TOM objects are absent from this build). | sessionId:string, table:string |
+| delete_culture | Delete a culture (locale) and all its translations and linguistic metadata from the model. | sessionId:string, locale:string |
 | delete_hierarchy | Delete a hierarchy from a table. | sessionId:string, table:string, hierarchy:string |
+| delete_partition | Delete a partition from a table (and its data on the next save). | sessionId:string, table:string, name:string |
 | delete_perspective | Delete a perspective from the model. | sessionId:string, perspective:string |
 | delete_relationship | Delete a relationship. | sessionId:string?, name:string?, fromTable:string?, fromColumn:string?, toTable:string?, toColumn:string? |
 | delete_role | Delete a security role (and its row-level/object-level rules and members) from the model. | sessionId:string, name:string |
+| delete_shared_expression | Delete a shared Power Query expression (parameter / staging query). | sessionId:string, name:string |
 | delete_table | Delete a table from the model (and any relationships that touch it). | sessionId:string, name:string |
+| delete_translation | Delete ONE object translation: the translated Caption / Description / DisplayFolder of a model object in a culture. | sessionId:string, culture:string, objectType:string, objectName:string, property:string, table:string? |
 | delete_variation | Delete a date-navigation variation from a column (by variation name). | sessionId:string, table:string, column:string, variation:string |
 | demote_headers | Power Query Use Headers as First Row: push the current column names back down into a data row. | sessionId:string, table:string, partitionName:string? |
 | detect_column_types | Power Query Detect Data Type: auto-detect and apply each column's type from its data. | sessionId:string, table:string, partitionName:string? |
@@ -130,6 +165,7 @@ Total tools: **421**
 | duplicate_column | Power Query Duplicate Column: copy a column under a new name. | sessionId:string, table:string, column:string, newName:string, partitionName:string? |
 | dynamic_unpivot_other_columns | Dynamic Unpivot Other Columns: unpivot every column NOT in keepColumns, deriving the unpivot set from Table.ColumnNames at evaluation time so NEW attribute columns added later auto-unpivot. | sessionId:string, table:string, keepColumns:string, partitionName:string? |
 | expand_column | Power Query Expand Column: surface inner fields of a structured column. | sessionId:string, table:string, column:string, fields:string?, kind:string?, partitionName:string? |
+| export_data_dictionary | Export the model's data dictionary (tables, columns, measures with descriptions/types/format strings/DAX, plus relationships) rendered as Markdown or HTML, with a description COVERAGE score - the fraction of visible objects carrying a description (the missing-descriptions gap). | sessionId:string, format:string? |
 | export_dataflow_modeljson | Export a Power BI dataflow model.json to disk from a set of entity definitions. | sessionId:string, dataflowName:string, entities:string, outputPath:string, culture:string? |
 | export_tmdl | Serialize the live model to TMDL text files (Microsoft's official serializer) - the model half of a PBIP project, fully text and source-control-friendly. | sessionId:string, outputFolder:string |
 | extract_report_level_measures | Promote report-level measures into the model as real measures: read the report definition's config.modelExtensions[].entities[].measures[] from a .pbix on disk and add each to its host table (keeping format/folder), skipping any name that already exists. | sessionId:string, pbixPath:string |
@@ -147,6 +183,7 @@ Total tools: **421**
 | generate_445_calendar_m | Generate a retail 4-4-5 / 4-5-4 / 5-4-4 calendar table as a new query, one row per week with RetailYear, PeriodOfYear, WeekOfPeriod, WeekOfYear, WeekIndex, WeekStart, WeekEnd. | sessionId:string, name:string, startDate:string, weeksPattern:integer?, periodsPerYear:integer?, yearsToGenerate:integer? |
 | generate_calendar_table_m | Generate a full date/calendar table as a new query: List.Dates over [startExpr..endExpr] with ~20 part columns (Year, Quarter, QuarterName, MonthNo, MonthName, MonthShort, YearMonthNo, YearMonth, ISOWeek, ISOYear, WeekdayNo, DayName, DayNo, DayOfYear, StartOfMonth, EndOfMonth, IsWeekend). | sessionId:string, name:string, startExpr:string, endExpr:string, fiscalYearEndMonth:integer?, locale:string? |
 | generate_pbip | Generate a complete text-based PBIP project from the live model + a source pbix's report: <name>.SemanticModel (TMDL via the official serializer) + <name>.Report (legacy report.json + definition.pbir + StaticResources) + <name>.pbip. | sessionId:string, sourcePbixPath:string, outputFolder:string, name:string, includeData:boolean? |
+| get_transaction_status | Report whether a model transaction is open on the session, when it opened, and how many gated saves it has deferred so far. | sessionId:string |
 | group_by | Power Query Group By: collapse rows to one per key-column combination with aggregates. | sessionId:string, table:string, keyColumns:string, aggregations:string, partitionName:string? |
 | group_keep_all_columns | Group By keeping ALL columns: Table.Group with {each _} then expand the grouped table over its non-key columns - the workaround for the editor's Group By dropping non-aggregated columns. | sessionId:string, table:string, keys:string, partitionName:string? |
 | import_bpa_ruleset | Import a Tabular Editor BPARules.json document and reconcile it with the built-in catalogue: rules whose ID matches a built-in are mapped to our evaluable check; rules whose logic is a Tabular Editor dynamic C#/LINQ expression we cannot safely evaluate are registered as descriptive-only (id/severity/description surfaced) and FLAGGED. | sessionId:string, json:string |
@@ -159,8 +196,12 @@ Total tools: **421**
 | keep_range_rows | Power Query Keep Range of Rows: skip offset rows then keep count rows. | sessionId:string, table:string, offset:integer, count:integer, partitionName:string? |
 | keep_top_rows | Power Query Keep Top Rows: keep only the first N rows. | sessionId:string, table:string, count:integer, partitionName:string? |
 | list_bpa_rules | List the BPA rule catalogue so you can see coverage: id, category, severity, scope, fixable flag, the exact TOM property each autofix sets, and the description. | sessionId:string, category:string? |
+| list_calendars | List the model's calendar-based time-intelligence definitions: table, primary column and column groups. | sessionId:string |
+| list_cultures | List the model's cultures (locales): name, translation count, and whether linguistic (Q&A) metadata is attached. | sessionId:string |
 | list_m | List every Power Query (M) partition expression and shared expression in the model. | sessionId:string |
+| list_partitions | List partitions - {table, partition, sourceType, mode, state, refreshedTime} - for the whole model or one table. | sessionId:string, table:string? |
 | list_roles | List every security role with its model permission, members, and per-table row-level filters (RLS) and object-level metadata permissions (OLS). | sessionId:string |
+| list_translations | List object translations - {culture, objectType, objectName, table, property, value} - for every culture or one. | sessionId:string, culture:string? |
 | list_udfs | List the model's DAX User-Defined Functions (name, expression, description). | sessionId:string |
 | list_variations | List the date-navigation variations on a column (name, relationship, default hierarchy, isDefault). | sessionId:string, table:string, column:string |
 | mark_as_date_table | Mark a table as the model's date table (the TOM equivalent of 'Mark as date table'): sets the table's data category to Time and flags the given DateTime column as the date key. | sessionId:string, table:string, dateColumn:string |
@@ -169,12 +210,14 @@ Total tools: **421**
 | merge_queries | Power Query Merge: join another query into this table on matching key columns, then optionally expand chosen columns. | sessionId:string, table:string, rightTable:string, leftKeys:string, rightKeys:string, joinKind:string?, expandColumns:string?, partitionName:string? |
 | model_health | Model-health report: object counts (tables/columns/measures/relationships) plus VertiPaq per-column storage (size + cardinality) read from the storage DMVs through the model connection - surfaces the largest columns so you can find bloat / unused high-cardinality columns. | sessionId:string |
 | move_column | Power Query Move Column: reposition a column. | sessionId:string, table:string, column:string, position:string, refColumn:string?, partitionName:string? |
+| move_measure | Move a measure to another table (its home table changes; DAX references to it are unaffected because measures are referenced as [Name]). | sessionId:string, measure:string, targetTable:string |
 | paginated_rest_source | Generate a paginated REST source as a new query: a List.Generate page loop that accumulates pages then Table.Combine. | sessionId:string, name:string, baseUrl:string, mode:string?, dataPath:string?, pageParam:string?, sizeParam:string?, pageSize:integer?, nextField:string?, recordFieldsExpr:string? |
 | pivot_column | Power Query Pivot Column: turn the distinct values of an attribute column into new columns, aggregating a value column. | sessionId:string, table:string, attributeColumn:string, valueColumn:string, aggregation:string?, partitionName:string? |
 | pivot_text_values | Pivot TEXT values: Table.Pivot with a Text.Combine aggregation (the default pivot errors on text values). | sessionId:string, table:string, attributeColumn:string, valueColumn:string, delimiter:string?, partitionName:string? |
 | preview_table | Return the first N rows of a table (TOPN) to inspect the actual data after a refresh. | sessionId:string, table:string, rows:integer? |
 | promote_headers | Power Query Use First Row as Headers: promote the first data row to column names. | sessionId:string, table:string, partitionName:string? |
 | quality_gate | PRE-DELIVERY QUALITY GATE: a comprehensive best-practices lint with a pass/review/fail verdict - unformatted measures/columns, tables out of relationships, visible key columns, missing date table, auto-date bloat, inactive relationships, and live relationship-integrity (orphan keys via DAX). | sessionId:string |
+| refresh_partition | Refresh ONE partition (RefreshType.Full) - cheaper than refresh_table when only one slice changed. | sessionId:string, table:string, name:string |
 | refresh_table | Refresh one table (or the whole model if table omitted). | sessionId:string, table:string?, full:boolean? |
 | remove_alternate_rows | Power Query Remove Alternate Rows: keep the first firstKept rows, then repeatedly take and skip in a pattern. | sessionId:string, table:string, firstKept:integer, taken:integer, skipped:integer, partitionName:string? |
 | remove_blank_rows | Power Query Remove Blank Rows: drop rows where every field is blank (empty or null). | sessionId:string, table:string, partitionName:string? |
@@ -183,16 +226,21 @@ Total tools: **421**
 | remove_duplicates | Power Query Remove Duplicates: keep one row per distinct combination. | sessionId:string, table:string, columns:string?, partitionName:string? |
 | remove_errors | Power Query Remove Errors: drop rows that carry an error value. | sessionId:string, table:string, columns:string?, partitionName:string? |
 | remove_from_perspective | Remove an object from a perspective. | sessionId:string, perspective:string, objectType:string, name:string, table:string? |
+| remove_hierarchy_level | Remove a level from a hierarchy (remaining levels are renumbered densely). | sessionId:string, table:string, hierarchy:string, level:string |
 | remove_role_member | Remove a member from a security role (by member identity). | sessionId:string, role:string, member:string |
-| rename_column | Rename a column (updates the model object; references by old name in M/DAX are not rewritten). | sessionId:string, table:string, column:string, newName:string |
+| rename_column | Rename a column. | sessionId:string, table:string, column:string, newName:string, propagate:boolean?, reportSource:string? |
 | rename_columns | Power Query Rename Columns: rename columns in the query. | sessionId:string, table:string, renames:string, partitionName:string? |
 | rename_columns_from_mapping | Rename columns from a CONTROL TABLE: Table.RenameColumns(prev, Table.ToRows(...), MissingField.Ignore). | sessionId:string, table:string, mappingTable:string, oldCol:string, newCol:string, partitionName:string? |
-| rename_table | Rename a table (updates the model object; references by the old name in M/DAX are not rewritten). | sessionId:string, table:string, newName:string |
+| rename_shared_expression | Rename a shared Power Query expression (parameter / staging query) AND rewrite every #"name" and bare-identifier reference to it across the other shared expressions and table partitions (string literals and comments are never touched). | sessionId:string, name:string, newName:string |
+| rename_table | Rename a table. | sessionId:string, table:string, newName:string, propagate:boolean?, reportSource:string? |
 | reorder_columns | Power Query Reorder Columns: move the listed columns to the front in the given order (remaining columns keep their relative order). | sessionId:string, table:string, order:string, partitionName:string? |
 | replace_errors | Power Query Replace Errors: substitute a value for error cells in specific columns. | sessionId:string, table:string, replacements:string, valueType:string?, partitionName:string? |
 | replace_value | Power Query Replace Value (whole-cell): swap the entire cell value in a column - unlike replace_values which replaces a text substring. | sessionId:string, table:string, column:string, oldValue:string?, newValue:string?, valueType:string?, partitionName:string? |
 | replace_values | Power Query Replace Values: replace every occurrence of a text value in a column. | sessionId:string, table:string, column:string, find:string, replace:string, partitionName:string? |
+| rls_test_harness | Prove the model's security filters: evaluate one DAX query under EVERY role in the model plus an unfiltered baseline, returning a per-role matrix of {role, rowCount, sampleRows, error}. | sessionId:string, query:string, sampleRows:integer? |
+| rollback_model_transaction | Roll back the open model transaction: discards every accumulated TOM change via Model.UndoLocalChanges - the engine never sees them. | sessionId:string |
 | run_bpa | Run the Best Practice Analyzer: a catalogue of ~90 lint rules (merging the Tabular Editor and semantic-link-labs rulesets) across Performance, DAXExpressions, ErrorPrevention, Maintenance, NamingConventions, Formatting, Metadata and RelationshipsLayout. | sessionId:string?, categories:string?, severities:string?, ruleIds:string?, scope:string? |
+| run_dax_as_role | Run a DAX query AS a security role: opens a second connection to the session's engine with Roles= (and optionally EffectiveUserName= for dynamic USERPRINCIPALNAME-driven RLS) so the engine applies the role's row-level filters, and returns the rows. | sessionId:string, query:string, roles:string, effectiveUserName:string?, maxRows:integer? |
 | running_total_m | Add a FAST running total of valueColumn ordered by orderColumn, optionally restarting within each groupColumn. | sessionId:string, table:string, valueColumn:string, orderColumn:string, groupColumn:string?, partitionName:string? |
 | select_columns | Power Query Choose Columns: keep ONLY the listed columns (in that order) and drop the rest. | sessionId:string, table:string, columns:string, partitionName:string? |
 | sentinel_diff | Sentinel: compare two integrity snapshots (before vs after a refresh) and raise ranked alerts on any regression - a whole category dropped to zero, a table's rows collapsed, the grand total fell, a measure started erroring. | beforePath:string, afterPath:string |
@@ -248,6 +296,8 @@ Total tools: **421**
 | split_column | Power Query Split Column: split a text column into N new columns. | sessionId:string, table:string, column:string, by:string, arg:string, parts:integer?, partitionName:string? |
 | split_column_to_rows | Power Query Split Column into Rows: split a text column on a delimiter so each part becomes its own row. | sessionId:string, table:string, column:string, delimiter:string, partitionName:string? |
 | stamp_vertipaq_stats | Read the storage DMVs and write each column's VertiPaq stats as Vertipaq_* annotations (Vertipaq_TotalSize / Vertipaq_DictionarySize / Vertipaq_Cardinality - the semantic-link-labs scheme) so the numbers persist in the model definition for offline review. | sessionId:string |
+| start_dax_trace | Start an Analysis Services server trace on the session's engine capturing QueryEnd, VertiPaq SE QueryEnd, VertiPaq SE CacheMatch and DAXEvaluationLog events (DAXEvaluationLog is dropped automatically on engines that reject it). | sessionId:string |
+| stop_dax_trace | Stop the session's DAX trace and return the structured events plus the Server Timings arithmetic: total query ms, storage-engine ms (sum of subclass-0 VertiPaq scans), formula-engine ms (query minus SE, floored at 0 because SE threads run in parallel), SE query count and cache matches. | sessionId:string |
 | strip_evaluateandlog | Remove EVALUATEANDLOG wrappers. | sessionId:string, table:string?, measure:string? |
 | transform_all_column_names | Bulk-transform every column NAME with Table.TransformColumnNames (schema-agnostic). | sessionId:string, table:string, transform:string, arg:string?, partitionName:string? |
 | transform_column | Power Query single-column transform: apply a scalar function to a column in place. | sessionId:string, table:string, column:string, operation:string, partitionName:string? |
@@ -255,6 +305,8 @@ Total tools: **421**
 | unpivot_columns | Power Query Unpivot Columns: turn the listed columns into Attribute/Value row pairs. | sessionId:string, table:string, columns:string, partitionName:string? |
 | unpivot_keep_nulls | Unpivot keeping NULL rows: replace nulls with a sentinel, UnpivotOtherColumns, then restore the sentinel to null - because plain unpivot silently DROPS null-valued rows. | sessionId:string, table:string, keepColumns:string, partitionName:string? |
 | unpivot_other_columns | Power Query Unpivot Other Columns: keep the listed columns and unpivot every OTHER column into Attribute/Value pairs (robust to new columns appearing). | sessionId:string, table:string, keepColumns:string, partitionName:string? |
+| update_calculation_item | Update an existing calculation item on a calculation group: DAX expression, ordinal, dynamic format string (empty string clears it) and/or rename it. | sessionId:string, table:string, name:string, daxExpression:string?, ordinal:integer?, formatStringExpression:string?, newName:string? |
+| update_calendar | Update a table's calendar definition: change the primary date column and/or replace the associated period-column group (columns are validated against the table). | sessionId:string, table:string, primaryColumn:string?, associatedColumns:string? |
 | update_kpi | Extend a measure's KPI beyond set_kpi: set the trend expression, a target format string, and the status/trend/target descriptions. | sessionId:string, table:string, measure:string, trendExpression:string?, targetFormatString:string?, statusDescription:string?, trendDescription:string?, targetDescription:string? |
 | update_relationship | Update an existing relationship's cardinality, filtering behaviour, active flag or join-on-date behaviour. | sessionId:string?, name:string?, fromTable:string?, fromColumn:string?, toTable:string?, toColumn:string?, fromCardinality:string?, toCardinality:string?, crossFilteringBehavior:string?, securityFilteringBehavior:string?, isActive:boolean?, joinOnDateBehavior:string? |
 | value_nativequery_folding | Run a native query against a source and KEEP downstream folding alive: Value.NativeQuery(sourceExpr, nativeQuery, params, [EnableFolding=true]). | sessionId:string, table:string, sourceExpr:string, nativeQuery:string, paramsExpr:string?, partitionName:string? |
@@ -287,7 +339,7 @@ Total tools: **421**
 | persist_open_model | DATA-PRESERVING persist for a report OPEN in Power BI Desktop (the loop for a loaded report like a live dashboard): apply the model edits to the connected LIVE model (SaveChanges + a Calculate when a calc column/relationship changed), then drive Desktop's own File>Save (scripted Ctrl+S, located by the session's engine port) so Desktop writes its full model+DATA image back to the .pbix. | sessionId:string, edits:string, pbixPath:string?, saveRetries:integer? |
 | save_open_pbix | Persist an OPEN Power BI Desktop model to its .pbix by driving Desktop's own File>Save (scripted Ctrl+S), located by the session's engine port. | sessionId:string, pbixPath:string?, saveRetries:integer? |
 
-## ReportTools (170)
+## ReportTools (187)
 
 | Tool | Description | Args |
 |---|---|---|
@@ -335,14 +387,21 @@ Total tools: **421**
 | align_visuals | Align, distribute or match-size a set of visuals: mode = left\|right\|top\|bottom\|centerx\|centery\|samewidth\|sameheight\|distributeh\|distributev. | reportSessionId:string, pageName:string, visualNames:string, mode:string |
 | apply_report_template | Apply a reusable REPORT TEMPLATE in one call: a bundle of theme + wallpaper + canvas-preset + nav settings. | reportSessionId:string, template:string, page:string? |
 | apply_report_theme | Apply a report theme (palette + fonts + structural colours) - the single biggest lever for a professional look. | reportSessionId:string, preset:string?, themeJson:string? |
+| audit_datamashup_credentials | READ-ONLY credential audit of a .pbix's DataMashup: reports whether the embedded M carries credential material (connection strings with Password=/pwd=/AccountKey=/SAS tokens/etc) and whether a PermissionBindings blob is present. | pbixPath:string |
+| audit_theme_compliance | READ-ONLY theme lint: walk every visual's objects/vcObjects formatting trees against the report's custom theme (read_theme's defaults) and report hard-coded overrides that fight it - off-palette colour literals, on-palette colours that FREEZE the palette so a theme swap will not restyle them, title font family/size overrides of the theme text classes, and per-visual card-style overrides where the theme's visualStyles already set the look. | reportSessionId:string |
 | auto_arrange | Auto-arrange a page into a clean professional grid in ONE call: header textboxes full-width at top, then a slicer filter-bar, then a KPI-card row, then the data visuals (charts/tables) in a balanced grid that fills the page - consistent margins, gutters and alignment. | reportSessionId:string, pageName:string, canvasWidth:number?, canvasHeight:number?, margin:number?, gutter:number?, headerHeight:number?, slicerHeight:number?, kpiHeight:number?, maxPerRow:integer? |
 | auto_mobile_layout | Auto-generate a phone (mobile) layout for a page: stacks the significant visuals (slicers, KPI value cards, tables, main charts) vertically on the 320-wide phone canvas; skips decorative shapes, tiny deltas and sparklines. | reportSessionId:string, pageName:string |
 | bind_dynamic_title | Bind a visual's TITLE to a text MEASURE (expression-based title): the measure (e.g. a SELECTEDVALUE narrative with an All/multiple fallback) becomes the title text and title show is forced on. | reportSessionId:string, page:string, visual:string, titleMeasure:string, titleMeasureTable:string? |
+| bind_field_parameter | Bind a FIELD PARAMETER to a visual so it actually swaps fields when opened in Desktop - the visual-side piece the model-side add_field_parameter cannot write. | reportSessionId:string, page:string, visual:string, parameterTable:string, parameterColumn:string?, role:string? |
 | bring_to_front | Bring a visual to the FRONT of the page (z = current max + 1) so it renders on top of everything else. | reportSessionId:string, page:string, visual:string |
 | build_category_report | RECIPE 2: a beautified multi-page CATEGORY REVIEW (the standard FMCG scan template) in ONE call - Performance, Price & Volume, Share and Distribution pages, branded + themed + nav-linked. | reportSessionId:string, config:string |
 | build_crossretailer_compare | RECIPE: a Total-Market compare page across two retailers/panels (pairs with conform_dimension). | reportSessionId:string, config:string |
 | build_executive_report | RECIPE: build a complete premium 'Executive' dashboard page in ONE call from a JSON config. | reportSessionId:string, config:string |
 | build_grid_report | RECIPE: a flexible GRID dashboard - compose ANY visuals in one call. | reportSessionId:string, config:string |
+| bulk_bind_visuals | BATCH set_visual_fields: rebind MANY visuals in one call instead of one round-trip each. | reportSessionId:string, items:string |
+| bulk_delete_visuals | BATCH delete_visual: delete MANY visuals in one call. | reportSessionId:string, items:string |
+| bulk_set_visual_format | BATCH set_visual_format: apply formatting to MANY visuals in one call. | reportSessionId:string, items:string |
+| change_visual_type | Change a visual's TYPE preserving its data bindings, position and applicable formatting. | reportSessionId:string, page:string, visual:string, newType:string |
 | clear_pages | Remove ALL pages from the report (e.g. to replace a stale report with a fresh one). | reportSessionId:string |
 | clear_visual_styling | FLATTEN visuals to a plain 'non-premium' look the SAFE way. | reportSessionId:string, pageName:string?, visualName:string?, whiteBackground:boolean?, removeTitles:boolean? |
 | clone_page | Deep-clone a report page: copies the whole section, assigns a fresh unique section name and a new ordinal at the end, sets newDisplayName, and regenerates EVERY visual's id so ids stay globally unique across the report. | reportSessionId:string, sourcePage:string, newDisplayName:string |
@@ -350,13 +409,19 @@ Total tools: **421**
 | delete_bookmark | Delete a report-level bookmark by name or displayName. | reportSessionId:string, name:string |
 | delete_page | Delete a report page by name or displayName. | reportSessionId:string, pageName:string |
 | delete_visual | Delete a visual from a page by its visual name. | reportSessionId:string, pageName:string, visualName:string |
+| document_report | One-call Markdown documentation artifact for a report: pages, every visual (type, position, size, title, field bindings), page/report filter counts, bookmarks and the theme - rendered purely from the existing readers. | reportSessionId:string, outPath:string? |
 | edit_visual_aggregation | Change the AGGREGATION applied to a field projected on a visual: wraps the Select node's Column/Measure in an Aggregation { Function }. | reportSessionId:string, page:string, visual:string, field:string, aggregation:string, scopedEvalBaseline:boolean? |
 | extract_power_query | Extract the full Section1.m (the plain-text Power Query M for every query) from a .pbix's DataMashup part, plus the declared query names. | pbixPath:string |
+| extract_report_colors | READ-ONLY report-wide colour inventory: every hardcoded colour literal across all visuals AND the theme, with the exact locations of each occurrence (theme.dataColors[2], page/visual objects paths). | reportSessionId:string |
+| fix_broken_visuals | Repair visual bindings that point at RENAMED or MOVED model fields (found by scan_broken_refs). | reportSessionId:string, repairMap:string |
 | fix_slicer_single_select | ONE-CALL flat-line fix for a field-parameter-axis chart. | pbix:string, page:string, chart:string?, default_value:string? |
 | format_title | Format a visual's title: text, colour, font size, alignment (left\|center\|right), show/hide. | reportSessionId:string, pageName:string, visualName:string, text:string?, color:string?, size:number?, align:string?, show:boolean? |
 | generate_palette | Compute a palette and write it into the theme: dataColors[] + good/neutral/bad + CF min/center/max. | reportSessionId:string, n:integer?, mode:string?, baseColor:string?, gradientFrom:string?, gradientTo:string? |
 | generate_theme | Generate AND (by default) apply a complete professional theme: an 8-colour palette derived from a primaryColor (hex), an explicit colors list, or a named style (executive\|vibrant\|slate\|sunset\|forest); structural colours + fonts; AND visualStyle defaults so EVERY visual automatically gets the card look - rounded corners, drop shadow, consistent title font, header hidden. | reportSessionId:string, name:string?, primaryColor:string?, colors:string?, style:string?, fontFamily:string?, dark:boolean?, cornerRadius:number?, shadow:boolean?, cardStyle:boolean?, apply:boolean?, logoPath:string? |
 | get_datamashup_info | Report whether a .pbix has a DataMashup (Power Query M) part and the query names it declares. | pbixPath:string |
+| get_report_filters | READ-ONLY read-back of the report's filter surface: every report / page / visual-level filter parsed to structured form - scope, table[field], filter type, lock/hide flags, and the decoded condition (values list, comparison op + value, topN, relative date/time, and/or chains). | reportSessionId:string |
+| get_report_settings | READ-ONLY read-back of the report-level behaviour toggles (config.settings) that set_report_settings writes, decoded to plain values, plus the custom-theme name when one is applied. | reportSessionId:string |
+| get_slicer_defaults | READ-ONLY read-back of every slicer's selection state: bound field, strictSingleSelect / singleSelect flags, display mode, and any default selection values written as Categorical filters in the slicer's own container. | reportSessionId:string, page:string? |
 | get_visual_format | Read the DECODED, simplified current formatting of one visual (READ-ONLY). | reportSessionId:string, page:string, visual:string |
 | get_visual_schema | Get the formatting schema for one visualType as a compact structured object - the same cards -> properties -> {type, enum, min, max} as list_visual_properties, optionally scoped to a single card (e.g. legend, valueAxis, title). | visualType:string, card:string? |
 | group_visuals | GROUP a set of visuals into a single group (like Desktop's right-click > Group). | reportSessionId:string, page:string, visualNames:string, groupName:string? |
@@ -364,6 +429,7 @@ Total tools: **421**
 | list_bookmarks | List the report's bookmarks: each one's name, displayName, active page, and the visual ids it hides. | reportSessionId:string |
 | list_pages | List the report pages (name, displayName, size, visual count). | reportSessionId:string |
 | list_recipes | The recipe CATALOG: lists every report template, what it produces, and the config fields that map it to a model. | - |
+| list_visual_data_roles | The QUERY data roles a visual type takes (Category / Y / Series / Values / Rows / ...), each with what it accepts (Grouping \| Measure \| GroupingOrMeasure), its per-role field cap, and the deprecated -> modern type mapping (card -> cardVisual, table -> tableEx, matrix -> pivotTable). | visualType:string |
 | list_visual_properties | List ALL formatting cards and their properties for one visualType (commonCards like title/background/border PLUS the visual-specific cards). | visualType:string |
 | list_visual_types | List every canonical Power BI visualType key the formatting registry knows (52 types), each tagged data \| container, with its card count. | - |
 | list_visuals | List the visuals on a page (name, type, position). | reportSessionId:string, pageName:string |
@@ -372,7 +438,9 @@ Total tools: **421**
 | modify_theme | Tweak the report's current custom theme in place: change the palette (primaryColor or colors list), background/foreground, or the card defaults (cornerRadius/shadow/font). | reportSessionId:string?, primaryColor:string?, colors:string?, background:string?, foreground:string?, cornerRadius:number?, shadow:boolean?, fontFamily:string? |
 | move_visual | Move an existing visual to new x/y (and optional z order). | reportSessionId:string, pageName:string, visualName:string, x:number?, y:number?, z:number? |
 | open_report | Open a .pbix's report for editing (pages/visuals). | pbixPath:string |
+| pbix_doctor | READ-ONLY 17-point file-level container scan of a CLOSED .pbix: zip part inventory vs expected parts, Version/DataModel/DataMashup presence and sizes, stale SecurityBindings and DataMashup PermissionBindings, sensitivity-label parts, zero-byte / truncated / duplicate parts, and whether the report part is legacy or PBIR. | pbixPath:string |
 | read_theme | Read the report's current custom theme: name, palette, structural colours, whether it sets visualStyle defaults, plus the full theme JSON to inspect or re-apply. | reportSessionId:string |
+| recolor_report | Find/replace colour literals across ALL visuals and the theme in one call: colorMap = JSON {"#OLD":"#NEW", ...}. | reportSessionId:string, colorMap:string |
 | register_custom_visual | Register an imported CUSTOM VISUAL into the report so its visualType is usable: adds the guid to layout.config.publicCustomVisuals, and when a .pbiviz path is given, stages the file into resourcePackages. | reportSessionId:string, name:string, guid:string?, path:string? |
 | register_org_custom_visual | Register an ORGANIZATION-store custom visual into the report so its visualType is usable: adds the guid to layout.config.organizationCustomVisuals (the tenant's org store, vs the public AppSource store register_custom_visual uses). | reportSessionId:string, name:string, guid:string?, path:string? |
 | remove_filter | Remove a matching filter (by table[field]) at a given scope = visual\|page\|report. | reportSessionId:string, scope:string, table:string, field:string, page:string?, visual:string? |
@@ -461,6 +529,7 @@ Total tools: **421**
 | update_power_query | Replace the ENTIRE Section1.m (the full 'section Section1; shared Query = ...;' document) inside a .pbix's DataMashup, clearing PermissionBindings (Desktop recomputes the SHA-256 on open). | pbixPath:string, newM:string |
 | update_visual_property | GENERAL offline report-visual editor: open a CLOSED .pbix, set ANY property at a JSON path UNDER a visual's singleVisual config, then write the .pbix back (DataModel preserved). | pbix:string, page:string, visualIdOrTitle:string, propertyPath:string, value:string, valueKind:string? |
 | validate_visual_format | Validate a formatJson against the registry for a given visualType WITHOUT applying it. | visualType:string, formatJson:string |
+| validate_wireframe | READ-ONLY layout lint over visual positions + page size (no fixes applied): visual OVERLAP pairs, OFF-CANVAS placement (negative or beyond the page bounds), tiny/zero-size visuals, z-order anomalies (a data visual rendering ABOVE an overlapping slicer), plus margin/gap statistics per page. | reportSessionId:string, pageName:string? |
 
 ## ServiceTools (8)
 

@@ -9,10 +9,12 @@ namespace SuperBiMcp.Services;
 
 /// <summary>
 /// All model-side edits go through the live Tabular Object Model against the
-/// Power BI Desktop AS engine. Every mutation ends with <c>Model.SaveChanges()</c>,
-/// which writes to the in-memory engine (persist to .pbix = File &gt; Save in Desktop).
+/// Power BI Desktop AS engine. Every mutation ends with <c>ModelTxn.Save(model)</c> - the gated
+/// SaveChanges: it writes to the in-memory engine immediately (persist to .pbix = File &gt; Save in
+/// Desktop) unless a model transaction is open on the session, in which case the changes accumulate
+/// on the object tree until commit_model_transaction issues the single real SaveChanges.
 /// </summary>
-public sealed class ModelService
+public sealed partial class ModelService
 {
     private readonly SessionStore _sessions;
     private readonly PortDiscovery _discovery;
@@ -209,7 +211,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         AddMeasureCore(model, table, name, dax, formatString, displayFolder, description);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { added = $"{table}[{name}]" });
     }
 
@@ -265,7 +267,7 @@ public sealed class ModelService
             "        FORMAT ( _overall, \"+0.0%;-0.0%\" ) & \" change\" ) )";
         var measure = new TOM.Measure { Name = measureName, Expression = dax };
         t.Measures.Add(measure);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { added = $"{homeTable}[{measureName}]",
             note = "Dynamic narrative text measure. Show it in a card (add_card) with word-wrap - it updates with slicers." });
     }
@@ -285,7 +287,7 @@ public sealed class ModelService
             throw new InvalidOperationException($"Measure '{measureName}' already exists on '{homeTable}'. Use update_measure.");
         string dax = BuildDynamicTitleDax(column, template, allLabel);
         t.Measures.Add(new TOM.Measure { Name = measureName, Expression = dax });
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { added = $"{homeTable}[{measureName}]",
             note = "Dynamic title text measure. Bind it with bind_dynamic_title (expression-based title)." });
     }
@@ -330,7 +332,7 @@ public sealed class ModelService
         if (dax != null) me.Expression = dax;
         if (formatString != null) me.FormatString = formatString;
         if (displayFolder != null) me.DisplayFolder = displayFolder;
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { updated = $"{table}[{name}]" });
     }
 
@@ -341,7 +343,7 @@ public sealed class ModelService
         if (!t.Measures.Contains(name))
             throw new InvalidOperationException($"Measure '{name}' not found on '{table}'.");
         t.Measures.Remove(name);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { deleted = $"{table}[{name}]" });
     }
 
@@ -365,7 +367,7 @@ public sealed class ModelService
         if (t.Columns.Contains(name))
             throw new InvalidOperationException($"Column '{name}' already exists on '{table}'.");
         t.Columns.Add(new TOM.CalculatedColumn { Name = name, Expression = dax });
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { added = $"{table}[{name}]", note = "Calculated column; values compute on the next recalc." });
     }
 
@@ -380,7 +382,7 @@ public sealed class ModelService
             .Where(r => r.FromTable?.Name == name || r.ToTable?.Name == name).ToList();
         foreach (var r in rels) model.Relationships.Remove(r);
         model.Tables.Remove(name);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { deleted = name, relationshipsDropped = rels.Count });
     }
 
@@ -392,7 +394,7 @@ public sealed class ModelService
             return Persisted(new { note = $"{table}[{name}] already exists" });
         var dt = Enum.TryParse<TOM.DataType>(dataType, ignoreCase: true, out var parsed) ? parsed : TOM.DataType.String;
         t.Columns.Add(new TOM.DataColumn { Name = name, DataType = dt, SourceColumn = sourceColumn ?? name });
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { added = $"{table}[{name}]", dataType = dt.ToString(), refreshRequired = true });
     }
 
@@ -405,12 +407,12 @@ public sealed class ModelService
         var model = _sessions.GetModel(sessionId).Model;
         var rel = AddRelationshipCore(model, fromTable, fromColumn, toTable, toColumn, bothDirections, active,
             fromCardinality, toCardinality, crossFilteringBehavior, securityFilteringBehavior, joinOnDateBehavior);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         // Build the relationship's cross-reference index so the model is immediately queryable.
         // Without this, the next query errors: "relationship ... needs to be recalculated".
         // RefreshType.Calculate recomputes indexes + calculated tables/columns without re-importing data.
         bool recalculated = true;
-        try { model.RequestRefresh(TOM.RefreshType.Calculate); model.SaveChanges(); }
+        try { model.RequestRefresh(TOM.RefreshType.Calculate); ModelTxn.Save(model); }
         catch { recalculated = false; }
         return Persisted(new
         {
@@ -462,9 +464,9 @@ public sealed class ModelService
         var model = _sessions.GetModel(sessionId).Model;
         var rel = UpdateRelationshipCore(model, name, fromTable, fromColumn, toTable, toColumn,
             fromCardinality, toCardinality, crossFilteringBehavior, securityFilteringBehavior, isActive, joinOnDateBehavior);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         bool recalculated = true;
-        try { model.RequestRefresh(TOM.RefreshType.Calculate); model.SaveChanges(); }
+        try { model.RequestRefresh(TOM.RefreshType.Calculate); ModelTxn.Save(model); }
         catch { recalculated = false; }
         return Persisted(new
         {
@@ -497,7 +499,7 @@ public sealed class ModelService
         var rel = ResolveRelationship(model, name, fromTable, fromColumn, toTable, toColumn);
         string label = $"{rel.FromTable.Name}[{rel.FromColumn.Name}] -> {rel.ToTable.Name}[{rel.ToColumn.Name}]";
         DeleteRelationshipCore(model, name, fromTable, fromColumn, toTable, toColumn);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { deleted = label });
     }
 
@@ -573,7 +575,7 @@ public sealed class ModelService
         if (part.Source is not TOM.MPartitionSource src)
             throw new InvalidOperationException($"Partition '{part.Name}' is not an M (Power Query) partition.");
         src.Expression = m;
-        model.SaveChanges();
+        ModelTxn.Save(model);
         session.MDirty.Mark($"set_partition_m {table}/{part.Name}");
         return Persisted(new { updated = $"{table}/{part.Name}", refreshRequired = true, refreshRequiredBeforeSave = true });
     }
@@ -598,7 +600,7 @@ public sealed class ModelService
             throw new InvalidOperationException($"Partition '{part.Name}' is not an M (Power Query) partition.");
         string newM = append(src.Expression ?? "");
         src.Expression = newM;
-        model.SaveChanges();
+        ModelTxn.Save(model);
         session.MDirty.Mark($"{transformName} {table}/{part.Name}");
         return Persisted(new { table = $"{table}/{part.Name}", transform = transformName, m = newM, refreshRequired = true, refreshRequiredBeforeSave = true });
     }
@@ -837,7 +839,7 @@ public sealed class ModelService
         var session = _sessions.GetModel(sessionId);
         var model = session.Model;
         string m = AddMParameterCore(model, session.MDirty, name, type, defaultValue, allowedValues);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { parameter = name, type = Integrations.MTransformBuilder.NormaliseParamType(type), m,
             refreshRequired = true, refreshRequiredBeforeSave = true });
     }
@@ -864,7 +866,7 @@ public sealed class ModelService
         var session = _sessions.GetModel(sessionId);
         var model = session.Model;
         AddTableFromMCore(model, session.MDirty, name, m);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { added = name, refreshRequired = true, refreshRequiredBeforeSave = true,
             note = "Columns populate after refresh_table (RefreshType.Full)." });
     }
@@ -1002,9 +1004,9 @@ public sealed class ModelService
         var session = _sessions.GetModel(sessionId);
         var model = session.Model;
         var (table, tomType) = CreateCsvTableCore(model, session.MDirty, name, csvPath, pathExpression, sampleRows);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         table.RequestRefresh(TOM.RefreshType.Full);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         // Deliberately NO MDirty.Clear here. The refresh above is scoped to THIS table only, so it
         // proves nothing about OTHER tables' pending M edits, and the tracker is model-wide with no
         // per-table scoping - clearing would silently disarm the save gate for them (the exact rule
@@ -1106,7 +1108,7 @@ public sealed class ModelService
             Source = new TOM.CalculatedPartitionSource { Expression = dax },
         });
         model.Tables.Add(table);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { added = name, refreshRequired = true });
     }
 
@@ -1117,7 +1119,7 @@ public sealed class ModelService
         var existing = model.Expressions.Find(name);
         if (existing != null) existing.Expression = m;
         else model.Expressions.Add(new TOM.NamedExpression { Name = name, Kind = TOM.ExpressionKind.M, Expression = m });
-        model.SaveChanges();
+        ModelTxn.Save(model);
         // A shared expression feeds EVERY partition that references it, so the pending-refresh
         // blast radius is the whole model, not one table.
         session.MDirty.Mark($"set_shared_expression {name}");
@@ -1141,10 +1143,12 @@ public sealed class ModelService
         var type = full ? TOM.RefreshType.Full : TOM.RefreshType.Calculate;
         if (table != null) Table(model, table).RequestRefresh(type);
         else model.RequestRefresh(type);
-        model.SaveChanges();
+        bool saved = ModelTxn.Save(model);
         // Only a whole-model Full proves every dependent partition re-imported; a table-scoped or
-        // Calculate refresh leaves other pending M edits unproven, so the flag stays.
-        if (full && table is null) session.MDirty.Clear("refresh_table(full: true) over the whole model");
+        // Calculate refresh leaves other pending M edits unproven, so the flag stays. And only an
+        // EXECUTED save proves anything - an open transaction defers the refresh to commit, so the
+        // dirty flag must survive until then.
+        if (saved && full && table is null) session.MDirty.Clear("refresh_table(full: true) over the whole model");
         return Persisted(new { refreshed = table ?? "(all)", type = type.ToString() });
     }
 
@@ -1172,12 +1176,29 @@ public sealed class ModelService
     public object RunDax(string sessionId, string dax, int maxRows)
     {
         var session = _sessions.GetModel(sessionId);
+        string query = NormaliseDaxQuery(dax);
+        var (cols, rows, truncated, _) = ExecuteDaxRows(session.AdomdConnectionString, query, maxRows, countBeyondMax: false);
+        return new { ok = true, columns = cols, rowCount = rows.Count, truncated, rows };
+    }
+
+    /// <summary>Allow bare table expressions: anything not starting EVALUATE/DEFINE gets EVALUATE prefixed.</summary>
+    internal static string NormaliseDaxQuery(string? dax)
+    {
         string query = (dax ?? "").Trim();
+        if (query.Length == 0) throw new InvalidOperationException("A DAX query is required.");
         if (!query.StartsWith("EVALUATE", StringComparison.OrdinalIgnoreCase) &&
             !query.StartsWith("DEFINE", StringComparison.OrdinalIgnoreCase))
-            query = "EVALUATE " + query;   // allow bare table expressions
+            query = "EVALUATE " + query;
+        return query;
+    }
 
-        using var conn = new Adomd.AdomdConnection(session.AdomdConnectionString);
+    /// <summary>Open an ADOMD connection, run the query and read up to maxRows rows (maxRows 0 = store
+    /// none). countBeyondMax keeps draining the reader so total is the TRUE row count even when the
+    /// stored rows are capped - the RLS harness and the benchmark need the real cardinality.</summary>
+    private static (List<string> cols, List<object?[]> rows, bool truncated, int total) ExecuteDaxRows(
+        string connectionString, string query, int maxRows, bool countBeyondMax)
+    {
+        using var conn = new Adomd.AdomdConnection(connectionString);
         conn.Open();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = query;
@@ -1187,9 +1208,16 @@ public sealed class ModelService
         for (int i = 0; i < rdr.FieldCount; i++) cols.Add(rdr.GetName(i));
         var rows = new List<object?[]>();
         bool truncated = false;
+        int total = 0;
         while (rdr.Read())
         {
-            if (rows.Count >= maxRows) { truncated = true; break; }
+            if (rows.Count >= maxRows)
+            {
+                truncated = true;
+                if (!countBeyondMax) break;
+                total++;
+                continue;
+            }
             var row = new object?[rdr.FieldCount];
             for (int i = 0; i < rdr.FieldCount; i++)
             {
@@ -1197,8 +1225,9 @@ public sealed class ModelService
                 row[i] = v is DBNull ? null : v;
             }
             rows.Add(row);
+            total++;
         }
-        return new { ok = true, columns = cols, rowCount = rows.Count, truncated, rows };
+        return (cols, rows, truncated, total);
     }
 
     // ---------------------------------------------------------------- measure regression harness
@@ -1303,7 +1332,7 @@ public sealed class ModelService
         var c = Column(Table(model, table), column);
         if (formatString != null) c.FormatString = formatString;
         if (dataCategory != null) c.DataCategory = dataCategory;
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { column = $"{table}[{column}]", format = c.FormatString, dataCategory = c.DataCategory });
     }
 
@@ -1313,7 +1342,7 @@ public sealed class ModelService
         var t = Table(model, table);
         var c = Column(t, column);
         c.SortByColumn = Column(t, sortByColumn);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { sorted = $"{table}[{column}] by [{sortByColumn}]" });
     }
 
@@ -1321,7 +1350,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         Column(Table(model, table), column).IsHidden = hidden;
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { column = $"{table}[{column}]", hidden });
     }
 
@@ -1329,7 +1358,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         Table(model, table).IsHidden = hidden;
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { table, hidden });
     }
 
@@ -1338,7 +1367,7 @@ public sealed class ModelService
         var model = _sessions.GetModel(sessionId).Model;
         var c = Column(Table(model, table), column);
         c.Name = newName;
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { renamed = $"{table}[{column}] -> [{newName}]" });
     }
 
@@ -1350,27 +1379,14 @@ public sealed class ModelService
         if (model.Tables.Contains(name))
             throw new InvalidOperationException($"Table '{name}' already exists. delete_table first or pick another name.");
 
-        string range = string.IsNullOrWhiteSpace(dateColumnRef)
-            ? "CALENDARAUTO()"
-            : $"CALENDAR(MIN({dateColumnRef}), MAX({dateColumnRef}))";
-        string dax =
-            "ADDCOLUMNS(\n" +
-            $"    {range},\n" +
-            "    \"Year\", YEAR([Date]),\n" +
-            "    \"Quarter\", \"Q\" & FORMAT([Date], \"Q\"),\n" +
-            "    \"QuarterNo\", INT(FORMAT([Date], \"Q\")),\n" +
-            "    \"Month\", FORMAT([Date], \"mmm\"),\n" +
-            "    \"MonthNo\", MONTH([Date]),\n" +
-            "    \"MonthYear\", FORMAT([Date], \"mmm yyyy\"),\n" +
-            "    \"YearMonthNo\", YEAR([Date]) * 100 + MONTH([Date])\n" +
-            ")";
+        string dax = DaxGenerators.DateTableDax(dateColumnRef);
 
         var table = new TOM.Table { Name = name };
         table.Partitions.Add(new TOM.Partition { Name = name, Source = new TOM.CalculatedPartitionSource { Expression = dax } });
         model.Tables.Add(table);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         table.RequestRefresh(TOM.RefreshType.Full);   // materialise the calculated columns
-        model.SaveChanges();
+        ModelTxn.Save(model);
 
         void TrySet(string col, Action<TOM.Column> a) { var c = table.Columns.Find(col); if (c != null) a(c); }
         TrySet("Date", c => c.FormatString = "dd mmm yyyy");
@@ -1390,7 +1406,7 @@ public sealed class ModelService
             }
             if (hy.Levels.Count > 0) table.Hierarchies.Add(hy);
         }
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { created = name, columns = table.Columns.Count(c => c.Type != TOM.ColumnType.RowNumber), hierarchy,
             note = "Relate your fact's date column to " + name + "[Date]." });
     }
@@ -1405,7 +1421,7 @@ public sealed class ModelService
         foreach (var lvl in levels)
             h.Levels.Add(new TOM.Level { Name = lvl, Ordinal = ord++, Column = Column(t, lvl) });
         t.Hierarchies.Add(h);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { hierarchy = $"{table}.{name}", levels });
     }
 
@@ -1432,7 +1448,7 @@ public sealed class ModelService
         Add($"{baseMeasure} MTD", $"TOTALMTD({b}, {dateColumn})", fmt);
         Add($"{baseMeasure} PY", $"CALCULATE({b}, SAMEPERIODLASTYEAR({dateColumn}))", fmt);
         Add($"{baseMeasure} YoY %", $"DIVIDE({b} - [{baseMeasure} PY], [{baseMeasure} PY])", "0.0%");
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { baseMeasure, homeTable = home.Name, created });
     }
 
@@ -1583,7 +1599,7 @@ public sealed class ModelService
                         IsActive = active,
                     };
                     model.Relationships.Add(rel);
-                    model.SaveChanges();
+                    ModelTxn.Save(model);
                     if (active) activeTablePairs.Add(TablePairKey(fromT, toT));
                     madeActive = active; created++;
                 }
@@ -1881,8 +1897,8 @@ public sealed class ModelService
         if (existing != null) t.Columns.Remove(existing);
         string expr = $"NOT ISBLANK(CALCULATE(COUNTROWS('{factTable}')))";
         t.Columns.Add(new TOM.CalculatedColumn { Name = name, Expression = expr, DataType = TOM.DataType.Boolean });
-        model.SaveChanges();
-        try { model.RequestRefresh(TOM.RefreshType.Calculate); model.SaveChanges(); } catch { }
+        ModelTxn.Save(model);
+        try { model.RequestRefresh(TOM.RefreshType.Calculate); ModelTxn.Save(model); } catch { }
 
         long total = 0, withData = 0;
         try
@@ -2112,7 +2128,7 @@ public sealed class ModelService
                          || string.Equals(r.ToTable?.Name, dup.Name, StringComparison.OrdinalIgnoreCase)).ToList())
                 model.Relationships.Remove(r);
             model.Tables.Remove(dup);
-            model.SaveChanges();
+            ModelTxn.Save(model);
         }
 
         string Pick(string t, string c) => $"SELECTCOLUMNS(FILTER(VALUES('{t}'[{c}]), NOT ISBLANK('{t}'[{c}])), \"{keyName}\", '{t}'[{c}])";
@@ -2120,8 +2136,8 @@ public sealed class ModelService
         var tbl = new TOM.Table { Name = newTable };
         tbl.Partitions.Add(new TOM.Partition { Name = newTable, Source = new TOM.CalculatedPartitionSource { Expression = dax } });
         model.Tables.Add(tbl);
-        model.SaveChanges();
-        model.RequestRefresh(TOM.RefreshType.Full); model.SaveChanges();   // materialise the conformed dim
+        ModelTxn.Save(model);
+        model.RequestRefresh(TOM.RefreshType.Full); ModelTxn.Save(model);   // materialise the conformed dim
 
         void Relate(string ft, string fc)
         {
@@ -2136,9 +2152,9 @@ public sealed class ModelService
             });
         }
         string? relErr = null;
-        try { Relate(table1, column1); Relate(table2, column2); model.SaveChanges(); }
+        try { Relate(table1, column1); Relate(table2, column2); ModelTxn.Save(model); }
         catch (Exception ex) { relErr = ex.Message; }
-        try { model.RequestRefresh(TOM.RefreshType.Calculate); model.SaveChanges(); } catch { }
+        try { model.RequestRefresh(TOM.RefreshType.Calculate); ModelTxn.Save(model); } catch { }
 
         long members = 0;
         try
@@ -2325,7 +2341,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         AddRoleCore(model, name, modelPermission);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { addedRole = name, modelPermission });
     }
 
@@ -2344,7 +2360,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         bool removed = DeleteRoleCore(model, name);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { deletedRole = name, existed = removed });
     }
 
@@ -2382,7 +2398,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetRlsCore(model, role, table, daxFilterExpression);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { role, table, filterExpression = daxFilterExpression });
     }
 
@@ -2399,7 +2415,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         AddRoleMemberCore(model, role, memberName, provider);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { role, member = memberName, external = !string.IsNullOrWhiteSpace(provider) });
     }
 
@@ -2419,7 +2435,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetTableOlsCore(model, role, table, permission);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { role, table, metadataPermission = permission });
     }
 
@@ -2436,7 +2452,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetColumnOlsCore(model, role, table, column, permission);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { role, column = $"{table}[{column}]", metadataPermission = permission });
     }
 
@@ -2461,7 +2477,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         AddCalculationGroupCore(model, table, precedence);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { calculationGroup = table, precedence });
     }
 
@@ -2481,7 +2497,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         AddCalculationItemCore(model, table, name, daxExpression, ordinal, formatStringExpression);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { calculationGroup = table, item = name, ordinal });
     }
 
@@ -2507,7 +2523,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetKpiCore(model, table, measure, targetExpression, statusExpression, statusGraphic);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { measure = $"{table}[{measure}]", statusGraphic = statusGraphic ?? "Three Circles Colored" });
     }
 
@@ -2532,7 +2548,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetDetailRowsCore(model, table, measure, daxTableExpression);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { target = measure != null ? $"{table}[{measure}]" : table });
     }
 
@@ -2558,7 +2574,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetDynamicFormatStringCore(model, table, measure, calculationItem, daxExpression);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { target = measure != null ? $"{table}[{measure}]" : $"{table}/{calculationItem}" });
     }
 
@@ -2598,8 +2614,8 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         AddFieldParameterCore(model, name, fields);
-        model.SaveChanges();
-        try { model.RequestRefresh(TOM.RefreshType.Calculate); model.SaveChanges(); } catch { }
+        ModelTxn.Save(model);
+        try { model.RequestRefresh(TOM.RefreshType.Calculate); ModelTxn.Save(model); } catch { }
         return Persisted(new { added = name, fields, note = "Field parameter table - drop its first column on a slicer to switch fields." });
     }
 
@@ -2650,8 +2666,8 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         AddWhatIfParameterCore(model, name, min, max, increment, defaultValue);
-        model.SaveChanges();
-        try { model.RequestRefresh(TOM.RefreshType.Calculate); model.SaveChanges(); } catch { }
+        ModelTxn.Save(model);
+        try { model.RequestRefresh(TOM.RefreshType.Calculate); ModelTxn.Save(model); } catch { }
         return Persisted(new { added = name, measure = $"{name} Value", min, max, increment,
             note = "Disconnected what-if table; drop its column on a slider slicer and reference the [<name> Value] measure." });
     }
@@ -2718,7 +2734,7 @@ public sealed class ModelService
         }
 
         DefineUdfCore(model, name, expr, description);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new
         {
             udf = name,
@@ -2773,7 +2789,7 @@ public sealed class ModelService
         var me = Table(model, table).Measures.Find(measure)
                  ?? throw new InvalidOperationException($"Measure '{measure}' not found on '{table}'.");
         me.Expression = DaxGenerators.InjectEvaluateAndLog(me.Expression, label);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { measure = $"{table}[{measure}]", wrapped = true, expression = me.Expression });
     }
 
@@ -2802,7 +2818,7 @@ public sealed class ModelService
                 stripped.Add($"{t.Name}[{me.Name}]");
             }
         }
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { stripped, count = stripped.Count });
     }
 
@@ -2811,7 +2827,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         var added = ApplyMeasureSpecsCore(model, specs);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { generator, added, count = added.Count });
     }
 
@@ -2884,7 +2900,7 @@ public sealed class ModelService
             t.Partitions.Add(new TOM.Partition { Name = tableName, Source = new TOM.CalculatedPartitionSource { Expression = classDax } });
             model.Tables.Add(t);
         }
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { measure = $"{spec.Table}[{spec.Name}]", classTable = tableName, refreshRequired = true });
     }
 
@@ -2913,7 +2929,7 @@ public sealed class ModelService
         string memberRef = $"{topTable}[Member]";
         var spec = DaxGenerators.DynamicTopNMeasure(homeTable, dimension, measure, $"{nName} Value", label, memberRef);
         AddMeasureCore(model, spec.Table, spec.Name, spec.Dax, spec.Format, spec.Folder, null);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { whatIfParameter = nName, topNTable = topTable, measure = $"{spec.Table}[{spec.Name}]", refreshRequired = true });
     }
 
@@ -2925,7 +2941,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         AddTimeIntelligenceCalcGroupCore(model, table, dateTable, dateColumn, precedence);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { calculationGroup = table, items = 8 });
     }
 
@@ -2949,7 +2965,7 @@ public sealed class ModelService
         AddCalculationItemCore(model, table, "Original Value", "SELECTEDMEASURE ()", 0, null);
         var item = DaxGenerators.CurrencyConversionCalcItem(rateTable, rateColumn, currencyColumn);
         AddCalculationItemCore(model, table, item.Name, item.Dax, item.Ordinal, item.FormatStringExpression);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { calculationGroup = table, items = 2 });
     }
 
@@ -2964,7 +2980,7 @@ public sealed class ModelService
         var model = _sessions.GetModel(sessionId).Model;
         var result = AddDynamicRlsCore(model, role, shape, securedTable, securedColumn,
             userTable, userEmailColumn, userValueColumn, pathColumn, modelPermission);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(result);
     }
 
@@ -2994,7 +3010,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         AddPerspectiveCore(model, name);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { addedPerspective = name });
     }
 
@@ -3012,7 +3028,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         AddToPerspectiveCore(model, perspective, table, childObject);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { perspective, table, member = childObject ?? "(whole table)" });
     }
 
@@ -3052,7 +3068,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         AddCultureCore(model, locale);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { addedCulture = locale });
     }
 
@@ -3075,7 +3091,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetTranslationCore(model, culture, objectType, objectName, property, value, table);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { culture, objectType, objectName, property, value });
     }
 
@@ -3084,7 +3100,18 @@ public sealed class ModelService
     {
         var c = model.Cultures.Find(culture)
                 ?? throw new InvalidOperationException($"Culture '{culture}' not found. Run add_culture first.");
-        var prop = property?.Trim().ToLowerInvariant() switch
+        var prop = ParseTranslatedProperty(property);
+        var target = ResolveTranslationTarget(model, objectType, objectName, table);
+
+        var existing = c.ObjectTranslations.FirstOrDefault(o => ReferenceEquals(o.Object, target) && o.Property == prop);
+        if (existing != null) { existing.Value = value; return existing; }
+        var tr = new TOM.ObjectTranslation { Object = target, Property = prop, Value = value };
+        c.ObjectTranslations.Add(tr);
+        return tr;
+    }
+
+    internal static TOM.TranslatedProperty ParseTranslatedProperty(string? property) =>
+        property?.Trim().ToLowerInvariant() switch
         {
             "caption" => TOM.TranslatedProperty.Caption,
             "description" => TOM.TranslatedProperty.Description,
@@ -3092,7 +3119,9 @@ public sealed class ModelService
             _ => throw new InvalidOperationException($"Invalid property '{property}'. Use Caption, Description or DisplayFolder."),
         };
 
-        TOM.MetadataObject target = (objectType ?? "").Trim().ToLowerInvariant() switch
+    internal static TOM.MetadataObject ResolveTranslationTarget(TOM.Model model, string? objectType,
+        string objectName, string? table) =>
+        (objectType ?? "").Trim().ToLowerInvariant() switch
         {
             "model" => model,
             "table" => Table(model, objectName),
@@ -3104,13 +3133,6 @@ public sealed class ModelService
             _ => throw new InvalidOperationException($"Invalid objectType '{objectType}'. Use table, column, measure, hierarchy or model."),
         };
 
-        var existing = c.ObjectTranslations.FirstOrDefault(o => ReferenceEquals(o.Object, target) && o.Property == prop);
-        if (existing != null) { existing.Value = value; return existing; }
-        var tr = new TOM.ObjectTranslation { Object = target, Property = prop, Value = value };
-        c.ObjectTranslations.Add(tr);
-        return tr;
-    }
-
     // ================================================================ aggregations (AlternateOf)
     /// <summary>
     /// Mark a detail column as an aggregation of a base column/table (the user-defined aggregations
@@ -3120,7 +3142,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetAggregationCore(model, table, detailColumn, baseColumnOrTable, summarization);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { aggregation = $"{table}[{detailColumn}]", baseColumnOrTable, summarization });
     }
 
@@ -3170,7 +3192,7 @@ public sealed class ModelService
         var model = session.Model;
         bool created = SetIncrementalRefreshCore(model, session.MDirty, table, rollingWindowGranularity,
             rollingWindowPeriods, incrementalGranularity, incrementalPeriods, pollingExpression);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new
         {
             table,
@@ -3245,7 +3267,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         AddVariationCore(model, table, column, relationship, defaultHierarchy, isDefault);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { variation = $"{table}[{column}]", relationship, defaultHierarchy, isDefault });
     }
 
@@ -3282,7 +3304,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetColumnDataCategoryCore(model, table, column, category);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { column = $"{table}[{column}]", dataCategory = category });
     }
 
@@ -3315,7 +3337,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         AddSvgMeasureCore(model, table, name, dax);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { added = $"{table}[{name}]", dataCategory = SvgBuilder.ImageUrlCategory,
             note = "SVG-image measure. Drop it into a table/matrix/card; it renders as an in-cell graphic." });
     }
@@ -3358,7 +3380,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetCustomFormatStringCore(model, table, measure, pattern);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { measure = $"{table}[{measure}]", formatString = pattern });
     }
 
@@ -3382,7 +3404,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         AddCalcGroupFormatCore(model, table, items, precedence);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { calculationGroup = table, items = items.Select(i => i.name).ToArray() });
     }
 
@@ -3425,7 +3447,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         var created = AddIbcsVarianceMeasureCore(model, table, actualMeasure, comparison, kind, comparisonMeasure, applyIbcsFormat);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { added = created.Select(c => $"{table}[{c}]").ToArray() });
     }
 
@@ -3471,7 +3493,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetDisplayFolderCore(model, target, folder, table);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { target = table != null ? $"{table}[{target}]" : target, displayFolder = folder });
     }
 
@@ -3496,7 +3518,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         MarkAsDateTableCore(model, table, dateColumn);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { table, dateColumn, dataCategory = "Time" });
     }
 
@@ -3516,7 +3538,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         AddQueryGroupCore(model, folder);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { addedQueryGroup = folder });
     }
 
@@ -3538,7 +3560,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetObjectQueryGroupCore(model, objectType, name, queryGroupFolder);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { objectType, name, queryGroup = queryGroupFolder });
     }
 
@@ -3583,7 +3605,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         var (cult, entityKey, added) = SetSynonymsCore(model, objectType, objectName, synonyms, culture, table);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new
         {
             culture = cult,
@@ -3670,7 +3692,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetTableDetailRowsCore(model, table, daxTableExpression);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { table, defaultDetailRows = true });
     }
 
@@ -3689,7 +3711,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetCalcGroupPrecedenceCore(model, table, precedence);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { calculationGroup = table, precedence });
     }
 
@@ -3706,7 +3728,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetCalcItemOrdinalCore(model, table, itemName, ordinal);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { calculationGroup = table, item = itemName, ordinal });
     }
 
@@ -3731,7 +3753,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         var resolved = SetPartitionModeCore(model, table, mode, partition);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { table, partition = resolved.Name, mode = resolved.Mode.ToString() });
     }
 
@@ -3752,7 +3774,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         var resolved = SetDataCoverageCore(model, table, daxExpression, partition);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { table, partition = resolved.Name, dataCoverage = daxExpression });
     }
 
@@ -3788,7 +3810,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetAnnotationCore(model, objectType, objectName, name, value, table);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { objectType, objectName, annotation = name, value });
     }
 
@@ -3817,7 +3839,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetExtendedPropertyCore(model, objectType, objectName, name, value, type, table);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { objectType, objectName, extendedProperty = name, type });
     }
 
@@ -3887,7 +3909,7 @@ public sealed class ModelService
         // apply (createOrReplace): copy the deserialized model's metadata onto the live model, then commit.
         // Model.CopyFrom replaces the live model's contents with the incoming definition.
         live.CopyFrom(incoming);
-        live.SaveChanges();
+        ModelTxn.Save(live);
         return Persisted(new
         {
             applied = true,
@@ -4040,7 +4062,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetSummarizeByCore(model, table, column, summarizeBy);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { column = $"{table}[{column}]", summarizeBy });
     }
 
@@ -4057,7 +4079,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetColumnDataTypeCore(model, table, column, dataType);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { column = $"{table}[{column}]", dataType, refreshRequired = true });
     }
 
@@ -4076,7 +4098,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetColumnFlagsCore(model, table, column, isKey, isNullable, isUnique, alignment, encodingHint);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { column = $"{table}[{column}]", isKey, isNullable, isUnique, alignment, encodingHint });
     }
 
@@ -4108,7 +4130,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetMeasurePropertiesCore(model, table, measure, hidden, description, newName);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { measure = $"{table}[{newName ?? measure}]", hidden, descriptionSet = description != null, renamed = newName != null });
     }
 
@@ -4134,7 +4156,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         RenameTableCore(model, table, newName);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { renamed = $"{table} -> {newName}",
             note = "Table object renamed; references by the old name in M/DAX are not rewritten." });
     }
@@ -4159,7 +4181,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         UpdateKpiCore(model, table, measure, trendExpression, targetFormatString, statusDescription, trendDescription, targetDescription);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { measure = $"{table}[{measure}]", trendSet = trendExpression != null });
     }
 
@@ -4189,7 +4211,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetHierarchyPropertiesCore(model, table, hierarchy, displayFolder, hidden, hideMembers);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { hierarchy = $"{table}.{hierarchy}", displayFolder, hidden, hideMembers });
     }
 
@@ -4217,7 +4239,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetLevelPropertiesCore(model, table, hierarchy, level, ordinal, description, newName);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { level = $"{table}.{hierarchy}.{newName ?? level}", ordinal, descriptionSet = description != null, renamed = newName != null });
     }
 
@@ -4244,7 +4266,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         bool removed = DeleteHierarchyCore(model, table, hierarchy);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { deletedHierarchy = $"{table}.{hierarchy}", existed = removed });
     }
 
@@ -4267,7 +4289,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetModelSettingsCore(model, discourageImplicitMeasures, defaultMode, directLakeBehavior, culture);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { discourageImplicitMeasures, defaultMode, directLakeBehavior, culture });
     }
 
@@ -4293,7 +4315,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         int dropped = DisableAutoDateTimeCore(model);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { autoDateTime = "disabled", autoTablesDropped = dropped,
             note = "Set __PBI_TimeIntelligenceEnabled=0 and removed any auto LocalDateTable/DateTableTemplate tables." });
     }
@@ -4378,7 +4400,7 @@ public sealed class ModelService
         var session = _sessions.GetModel(sessionId);
         var b = EnsureCompatLevel(session, "lineagetag");
         SetLineageTagCore(session.Model, objectType, name, tag, table);
-        session.Model.SaveChanges();
+        ModelTxn.Save(session.Model);
         return Persisted(new { objectType, name, lineageTag = tag,
             compatibilityLevel = session.Database.CompatibilityLevel, compatibilityLevelBumped = b.bumped,
             note = CompatNote(b, "lineage tags") });
@@ -4402,7 +4424,7 @@ public sealed class ModelService
         var session = _sessions.GetModel(sessionId);
         var b = EnsureCompatLevel(session, "sourcelineagetag");
         SetSourceLineageTagCore(session.Model, objectType, name, value, table);
-        session.Model.SaveChanges();
+        ModelTxn.Save(session.Model);
         return Persisted(new { objectType, name, sourceLineageTag = value,
             compatibilityLevel = session.Database.CompatibilityLevel, compatibilityLevelBumped = b.bumped,
             note = CompatNote(b, "source lineage tags") });
@@ -4425,7 +4447,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         DeclareChangedPropertyCore(model, objectType, name, property, table);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { objectType, name, changedProperty = property,
             note = "Property marked changed so a schema sync preserves your local override." });
     }
@@ -4451,7 +4473,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         var all = MarkRemovedChildrenCore(model, table, removedSourceLineageTags);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { table, removedChildren = all,
             note = "PBI_RemovedChildren annotation written so a schema sync keeps these children removed." });
     }
@@ -4526,7 +4548,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         var changed = SetIsAvailableInMdxCore(model, table, column, value, bulkHeuristic, out var guarded);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { isAvailableInMdx = value, columnsChanged = changed.Count, columns = changed,
             sortByTargetsGuarded = guarded,
             note = "IsAvailableInMDX kept true on every SortByColumn target (flipping it false breaks the sort)." });
@@ -4610,7 +4632,7 @@ public sealed class ModelService
         catch (Exception ex) { dmvError = ex.Message; }
 
         int stamped = StampVertipaqStatsCore(model, rows);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { columnsStamped = stamped, dmvError,
             note = dmvError == null
                 ? "VertiPaq stats stamped as Vertipaq_* annotations (semantic-link-labs scheme)."
@@ -4653,7 +4675,7 @@ public sealed class ModelService
         var b = EnsureCompatLevel(session, "selectionexpressions");
         SetCalcGroupSelectionExpressionsCore(session.Model, table, noSelectionExpression,
             multipleOrEmptySelectionExpression, noSelectionFormatString, multipleOrEmptyFormatString);
-        session.Model.SaveChanges();
+        ModelTxn.Save(session.Model);
         return Persisted(new { calculationGroup = table,
             noSelectionSet = noSelectionExpression != null,
             multipleOrEmptySet = multipleOrEmptySelectionExpression != null,
@@ -4696,7 +4718,7 @@ public sealed class ModelService
         var session = _sessions.GetModel(sessionId);
         var b = EnsureCompatLevel(session, "selectionexpressions");
         var parsed = SetSelectionExpressionBehaviorCore(session.Model, behavior);
-        session.Model.SaveChanges();
+        ModelTxn.Save(session.Model);
         return Persisted(new { selectionExpressionBehavior = parsed,
             compatibilityLevel = session.Database.CompatibilityLevel, compatibilityLevelBumped = b.bumped,
             note = "FLAG: stamped as the PBI_SelectionExpressionBehavior model annotation (no TOM property in this build). " + CompatNote(b, "selection-expression behavior") });
@@ -4727,7 +4749,7 @@ public sealed class ModelService
         var session = _sessions.GetModel(sessionId);
         var b = EnsureCompatLevel(session, "dataaccessoptions");
         SetDataAccessOptionsCore(session.Model, fastCombine, legacyRedirects, returnErrorValuesAsNull);
-        session.Model.SaveChanges();
+        ModelTxn.Save(session.Model);
         var dao = session.Model.DataAccessOptions;
         return Persisted(new { fastCombine = dao?.FastCombine, legacyRedirects = dao?.LegacyRedirects,
             returnErrorValuesAsNull = dao?.ReturnErrorValuesAsNull,
@@ -4751,7 +4773,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetTablePrivateCore(model, table, isPrivate);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { table, isPrivate });
     }
 
@@ -4772,7 +4794,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         var (cult, entity, terms) = SetSynonymStateCore(model, objectType, name, synonyms, state, weight, culture, table);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { culture = cult, entity, state, weight, synonyms = terms,
             note = "Synonym state/weight written to Culture.LinguisticMetadata. FLAG: the linguistic schema is complex - only flat per-entity terms with State/Weight are authored." });
     }
@@ -4836,7 +4858,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         var (cult, key) = SetQnaPhrasingCore(model, phrasingType, phrasingName, phrasingJson, culture);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { culture = cult, phrasing = key, phrasingType,
             note = "LSDL phrasing written to Culture.LinguisticMetadata.Relationships. FLAG: the phrasing schema is large and is stored verbatim, not validated." });
     }
@@ -4930,8 +4952,8 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         var result = AddAutoAggregationsCore(model, detailTable, groupByColumns, measureMappings);
-        model.SaveChanges();
-        try { model.RequestRefresh(TOM.RefreshType.Calculate); model.SaveChanges(); } catch { }
+        ModelTxn.Save(model);
+        try { model.RequestRefresh(TOM.RefreshType.Calculate); ModelTxn.Save(model); } catch { }
         return Persisted(new
         {
             aggTable = result.aggTable,
@@ -5236,7 +5258,7 @@ public sealed class ModelService
 
         if (!dryRun)
         {
-            if (outcomes.Count > 0) model.SaveChanges();
+            if (outcomes.Count > 0) ModelTxn.Save(model);
             return Persisted(new
             {
                 ruleId = rule.Id,
@@ -5294,7 +5316,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         var name = AddCalendarBasedTimeIntelligenceCore(model, calendarTable, primaryColumn, associatedColumns);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { calendarTable, calendar = name, primaryColumn, associatedColumns,
             note = "FLAG: stamped as a PBI_Calendar table annotation (the native calendar/calendarColumnGroup TOM objects are very new and absent from this build)." });
     }
@@ -5338,7 +5360,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         var changed = FixCaseSensitiveDaxCore(model);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { measuresRewritten = changed.Count, measures = changed,
             note = "Table/column/measure references rewritten to the model's exact casing for case-sensitive sources." });
     }
@@ -5441,7 +5463,7 @@ public sealed class ModelService
         var specs = ReadReportLevelMeasures(pbixPath);
         var model = _sessions.GetModel(sessionId).Model;
         var promoted = PromoteReportMeasuresCore(model, specs);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { promoted, count = promoted.Count, found = specs.Count,
             note = "Report-level measures read from Report/Layout config.modelExtensions and added to the model." });
     }
@@ -5518,7 +5540,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         bool removed = RemoveRoleMemberCore(model, role, member);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { role, member, removed });
     }
 
@@ -5535,7 +5557,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         SetRolePermissionCore(model, role, modelPermission);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { role, modelPermission });
     }
 
@@ -5550,7 +5572,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         bool removed = RemoveFromPerspectiveCore(model, perspective, objectType, name, table);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { perspective, objectType, name, removed });
     }
 
@@ -5589,7 +5611,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         bool removed = DeletePerspectiveCore(model, perspective);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { deletedPerspective = perspective, existed = removed });
     }
 
@@ -5619,7 +5641,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         bool removed = DeleteVariationCore(model, table, column, variation);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { deletedVariation = $"{table}[{column}].{variation}", existed = removed });
     }
 
@@ -5643,7 +5665,7 @@ public sealed class ModelService
     {
         var model = _sessions.GetModel(sessionId).Model;
         var (created, type) = SetDataSourceCore(model, name, kind, connectionDetails, credential, connectionString, provider, impersonation);
-        model.SaveChanges();
+        ModelTxn.Save(model);
         return Persisted(new { dataSource = name, kind = type, created });
     }
 
@@ -5725,6 +5747,838 @@ public sealed class ModelService
         Enum.TryParse<TOM.MetadataPermission>((s ?? "").Trim(), ignoreCase: true, out var p)
             ? p
             : throw new InvalidOperationException($"Invalid OLS permission '{s}'. Use Default, None or Read.");
+
+    // ================================================================ Wave G1: RLS execution
+    /// <summary>Run a DAX query on a SECOND connection carrying Roles= (and optionally
+    /// EffectiveUserName=) so the engine applies the role's security filters - the session's own
+    /// admin connection stays untouched.</summary>
+    public object RunDaxAsRole(string sessionId, string query, string[] roles, string? effectiveUserName, int maxRows)
+    {
+        var session = _sessions.GetModel(sessionId);
+        var resolved = ResolveRoleNames(session.Model, roles);
+        string conn = BuildRoleConnectionString(session.AdomdConnectionString, resolved, effectiveUserName);
+        string q = NormaliseDaxQuery(query);
+        var (cols, rows, truncated, total) = ExecuteDaxRows(conn, q, maxRows, countBeyondMax: true);
+        return new { ok = true, roles = resolved, effectiveUserName, columns = cols, rowCount = total,
+            returnedRows = rows.Count, truncated, rows };
+    }
+
+    /// <summary>Evaluate one query under EVERY model role plus unfiltered - the per-role proof matrix.</summary>
+    public object RlsTestHarness(string sessionId, string query, int sampleRows)
+    {
+        var session = _sessions.GetModel(sessionId);
+        if (sampleRows < 0 || sampleRows > 100) throw new InvalidOperationException("sampleRows must be 0..100.");
+        var roleNames = session.Model.Roles.Select(r => r.Name).ToList();
+        if (roleNames.Count == 0)
+            throw new InvalidOperationException(
+                "The model has no security roles to test. Author RLS first (add_role / set_rls / add_dynamic_rls).");
+        string q = NormaliseDaxQuery(query);
+
+        var matrix = new List<object> { EvaluateUnderRole(session, q, null, sampleRows) };
+        foreach (var role in roleNames) matrix.Add(EvaluateUnderRole(session, q, role, sampleRows));
+        return new { ok = true, query = q, rolesTested = roleNames.Count, matrix,
+            note = "Row 1 is the unfiltered baseline. A role whose rowCount equals the baseline is NOT filtering this query; an error usually means the role's filter DAX is invalid or OLS blocks a queried object." };
+    }
+
+    private object EvaluateUnderRole(ModelSession session, string query, string? role, int sampleRows)
+    {
+        try
+        {
+            string conn = role is null
+                ? session.AdomdConnectionString
+                : BuildRoleConnectionString(session.AdomdConnectionString, new[] { role }, null);
+            var (cols, rows, _, total) = ExecuteDaxRows(conn, query, sampleRows, countBeyondMax: true);
+            return new { role = role ?? "(unfiltered)", rowCount = total, columns = cols, sampleRows = rows, error = (string?)null };
+        }
+        catch (Exception ex)
+        {
+            return new { role = role ?? "(unfiltered)", rowCount = 0, columns = new List<string>(),
+                sampleRows = new List<object?[]>(), error = (string?)ScrubToken(ex.Message, session.AccessTokenPrivate) };
+        }
+    }
+
+    /// <summary>Resolve requested role names against the model (case-insensitive) so a typo can never
+    /// silently run unfiltered. Returns the model's exact-cased names, de-duplicated.</summary>
+    internal static List<string> ResolveRoleNames(TOM.Model model, string[]? roles)
+    {
+        if (roles == null || roles.Length == 0) throw new InvalidOperationException("Provide at least one role.");
+        var known = model.Roles.Select(r => r.Name).ToList();
+        var resolved = new List<string>();
+        foreach (var raw in roles)
+        {
+            string want = (raw ?? "").Trim();
+            var hit = known.FirstOrDefault(k => k.Equals(want, StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException(
+                    $"Role '{want}' not found. Model roles: {(known.Count > 0 ? string.Join(", ", known) : "(none)")}.");
+            if (!resolved.Contains(hit, StringComparer.Ordinal)) resolved.Add(hit);
+        }
+        return resolved;
+    }
+
+    /// <summary>Append Roles= / EffectiveUserName= to the session's ADOMD connection string. Values that
+    /// would break out of their key=value slot (';' '=' or the CSV ',') are refused - connection strings
+    /// have no escaping for these, and a smuggled property would silently change what gets executed.</summary>
+    internal static string BuildRoleConnectionString(string baseConnectionString, IReadOnlyList<string> roles, string? effectiveUserName)
+    {
+        if (roles == null || roles.Count == 0) throw new InvalidOperationException("Provide at least one role.");
+        foreach (var r in roles)
+            if (string.IsNullOrWhiteSpace(r) || r.IndexOfAny(new[] { ';', '=', ',' }) >= 0)
+                throw new InvalidOperationException(
+                    $"Role name '{r}' cannot be placed on a connection string (empty, or contains ';', '=' or ',').");
+        var sb = new StringBuilder(baseConnectionString);
+        sb.Append(";Roles=").Append(string.Join(",", roles));
+        if (!string.IsNullOrWhiteSpace(effectiveUserName))
+        {
+            if (effectiveUserName.IndexOfAny(new[] { ';', '=' }) >= 0)
+                throw new InvalidOperationException("effectiveUserName cannot contain ';' or '='.");
+            sb.Append(";EffectiveUserName=").Append(effectiveUserName.Trim());
+        }
+        return sb.ToString();
+    }
+
+    // ================================================================ Wave G1: model write-transactions
+    public object BeginModelTransaction(string sessionId)
+    {
+        var session = _sessions.GetModel(sessionId);
+        var st = ModelTxn.Begin(session.Model);
+        return new { ok = true, open = true, openedUtc = st.OpenedUtc,
+            note = "Model tools now accumulate TOM changes WITHOUT SaveChanges. commit_model_transaction applies everything in one SaveChanges; rollback_model_transaction discards it. Refreshes requested inside the transaction run at commit." };
+    }
+
+    public object CommitModelTransaction(string sessionId)
+    {
+        var session = _sessions.GetModel(sessionId);
+        int deferred = ModelTxn.Commit(session.Model);
+        return Persisted(new { committed = true, deferredSavesApplied = deferred });
+    }
+
+    public object RollbackModelTransaction(string sessionId)
+    {
+        var session = _sessions.GetModel(sessionId);
+        int deferred = ModelTxn.Rollback(session.Model);
+        return new { ok = true, rolledBack = true, deferredSavesDiscarded = deferred,
+            note = "Local TOM changes were discarded via Model.UndoLocalChanges - the engine never saw them. Pending-M dirty flags raised during the transaction remain (fail-closed: at worst one redundant refresh)." };
+    }
+
+    public object GetTransactionStatus(string sessionId)
+    {
+        var session = _sessions.GetModel(sessionId);
+        var st = ModelTxn.For(session.Model);
+        return st is null
+            ? new { ok = true, open = false }
+            : (object)new { ok = true, open = true, openedUtc = st.OpenedUtc, deferredSaves = st.DeferredSaves };
+    }
+
+    // ================================================================ Wave G1: DAX benchmark + trace
+    /// <summary>Timed runs of one query, optionally after an XMLA ClearCache of the session database.
+    /// Wall-clock client-side timings (execution + row streaming) - FE/SE splits come from the trace.</summary>
+    public object DaxBenchmark(string sessionId, string query, int runs, bool clearCache)
+    {
+        var session = _sessions.GetModel(sessionId);
+        if (runs < 1 || runs > 20) throw new InvalidOperationException("runs must be 1..20.");
+        string q = NormaliseDaxQuery(query);
+
+        bool cacheCleared = false;
+        if (clearCache)
+        {
+            var res = session.Server.Execute(BuildClearCacheXmla(session.Database.ID));
+            if (res.ContainsErrors)
+                throw new InvalidOperationException("ClearCache failed: the engine returned errors for the XMLA command.");
+            cacheCleared = true;
+        }
+        var timesMs = new List<double>();
+        int rowCount = 0;
+        for (int i = 0; i < runs; i++)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var (_, _, _, total) = ExecuteDaxRows(session.AdomdConnectionString, q, maxRows: 0, countBeyondMax: true);
+            sw.Stop();
+            timesMs.Add(Math.Round(sw.Elapsed.TotalMilliseconds, 1));
+            rowCount = total;
+        }
+        return new { ok = true, query = q, runs, cacheCleared,
+            coldMs = cacheCleared ? timesMs[0] : (double?)null,
+            warmMs = cacheCleared ? timesMs.Skip(1).ToList() : timesMs,
+            rowCount,
+            note = "Client wall-clock per run (query + full row drain). coldMs is only reported when the cache was cleared first. Pair with start_dax_trace for FE/SE splits and cache hits." };
+    }
+
+    /// <summary>The ClearCache XMLA command scoped to one database. Pure + testable (XML-escaped ID).</summary>
+    internal static string BuildClearCacheXmla(string databaseId)
+    {
+        if (string.IsNullOrWhiteSpace(databaseId))
+            throw new InvalidOperationException("Database ID is required for ClearCache.");
+        string id = System.Security.SecurityElement.Escape(databaseId);
+        return "<ClearCache xmlns=\"http://schemas.microsoft.com/analysisservices/2003/engine\"><Object><DatabaseID>"
+            + id + "</DatabaseID></Object></ClearCache>";
+    }
+
+    public object StartDaxTrace(string sessionId) => DaxTrace.Start(_sessions.GetModel(sessionId));
+
+    public object StopDaxTrace(string sessionId) => DaxTrace.Stop(_sessions.GetModel(sessionId));
+
+    // ================================================================ Wave G1: calculation item CRUD completion
+    public object UpdateCalculationItem(string sessionId, string table, string name, string? daxExpression,
+        int? ordinal, string? formatStringExpression, string? newName)
+    {
+        var model = _sessions.GetModel(sessionId).Model;
+        var item = UpdateCalculationItemCore(model, table, name, daxExpression, ordinal, formatStringExpression, newName);
+        ModelTxn.Save(model);
+        return Persisted(new { calculationGroup = table, item = item.Name, ordinal = item.Ordinal });
+    }
+
+    internal static TOM.CalculationItem UpdateCalculationItemCore(TOM.Model model, string table, string name,
+        string? daxExpression, int? ordinal, string? formatStringExpression, string? newName)
+    {
+        var t = Table(model, table);
+        var cg = t.CalculationGroup
+                 ?? throw new InvalidOperationException($"Table '{table}' is not a calculation group.");
+        var item = cg.CalculationItems.Find(name)
+                   ?? throw new InvalidOperationException($"Calculation item '{name}' not found on '{table}'.");
+        if (!string.IsNullOrWhiteSpace(daxExpression)) item.Expression = daxExpression;
+        if (ordinal is { } o) item.Ordinal = o;
+        // empty string clears the dynamic format string; null leaves it unchanged.
+        if (formatStringExpression != null)
+            item.FormatStringDefinition = formatStringExpression.Length == 0
+                ? null
+                : new TOM.FormatStringDefinition { Expression = formatStringExpression };
+        if (!string.IsNullOrWhiteSpace(newName) && !string.Equals(newName, name, StringComparison.Ordinal))
+        {
+            if (cg.CalculationItems.Contains(newName))
+                throw new InvalidOperationException($"Calculation item '{newName}' already exists on '{table}'.");
+            item.Name = newName;
+        }
+        return item;
+    }
+
+    public object DeleteCalculationItem(string sessionId, string table, string name)
+    {
+        var model = _sessions.GetModel(sessionId).Model;
+        DeleteCalculationItemCore(model, table, name);
+        ModelTxn.Save(model);
+        return Persisted(new { calculationGroup = table, deleted = name });
+    }
+
+    internal static void DeleteCalculationItemCore(TOM.Model model, string table, string name)
+    {
+        var t = Table(model, table);
+        var cg = t.CalculationGroup
+                 ?? throw new InvalidOperationException($"Table '{table}' is not a calculation group.");
+        var item = cg.CalculationItems.Find(name)
+                   ?? throw new InvalidOperationException($"Calculation item '{name}' not found on '{table}'.");
+        cg.CalculationItems.Remove(item);
+    }
+
+    // ================================================================ Wave G1: shared-expression rename / delete
+    public object RenameSharedExpression(string sessionId, string name, string newName)
+    {
+        var session = _sessions.GetModel(sessionId);
+        var model = session.Model;
+        var rewrittenIn = RenameSharedExpressionCore(model, name, newName);
+        ModelTxn.Save(model);
+        session.MDirty.Mark($"rename_shared_expression {name} -> {newName}");
+        return Persisted(new { renamed = name, to = newName, referencesRewrittenIn = rewrittenIn,
+            refreshRequiredBeforeSave = true });
+    }
+
+    /// <summary>Rename a shared expression AND rewrite every #"name" / bare-identifier reference to it in
+    /// other shared expressions and table partitions. All-or-nothing: a document that DECLARES the same
+    /// name locally (let-step or lambda parameter - detected by an assignment/arrow after the token)
+    /// shadows the shared name there, so a text rewrite is ambiguous and the whole rename is refused
+    /// listing the offending documents.</summary>
+    internal static List<string> RenameSharedExpressionCore(TOM.Model model, string name, string newName)
+    {
+        if (string.IsNullOrWhiteSpace(newName)) throw new InvalidOperationException("newName is required.");
+        var expr = model.Expressions.Find(name)
+                   ?? throw new InvalidOperationException($"Shared expression '{name}' not found.");
+        if (!string.Equals(name, newName, StringComparison.Ordinal) && model.Expressions.Contains(newName))
+            throw new InvalidOperationException($"A shared expression named '{newName}' already exists.");
+
+        var pending = new List<(Action<string> apply, string current, string label)>();
+        var ambiguous = new List<string>();
+        foreach (var (label, code, apply) in EnumerateMDocuments(model, skipExpression: name))
+        {
+            var scan = ScanMForName(code, name);
+            if (scan.DeclaresLocally && (scan.HasQuotedRef || scan.HasBareRef)) { ambiguous.Add(label); continue; }
+            if (scan.DeclaresLocally) continue;   // local-only: the shared name is fully shadowed there
+            if (scan.HasQuotedRef || scan.HasBareRef) pending.Add((apply, code, label));
+        }
+        if (ambiguous.Count > 0)
+            throw new InvalidOperationException(
+                $"Cannot rename '{name}': these M documents declare a LOCAL '{name}' AND use the name, so the references there are shadowed and a text rewrite is unsafe: "
+                + string.Join(", ", ambiguous) + ". Rename those local steps first.");
+
+        var rewrittenIn = new List<string>();
+        foreach (var (apply, code, label) in pending)
+        {
+            apply(RewriteMReferences(code, name, newName));
+            rewrittenIn.Add(label);
+        }
+        expr.Name = newName;
+        return rewrittenIn;
+    }
+
+    public object DeleteSharedExpression(string sessionId, string name)
+    {
+        var session = _sessions.GetModel(sessionId);
+        var model = session.Model;
+        DeleteSharedExpressionCore(model, name);
+        ModelTxn.Save(model);
+        session.MDirty.Mark($"delete_shared_expression {name}");
+        return Persisted(new { deleted = name, refreshRequiredBeforeSave = true });
+    }
+
+    /// <summary>Delete a shared expression, refusing (with the referencer list) while any other M
+    /// document still references it. A document that declares the same name locally shadows the shared
+    /// one, so its uses do not count as references.</summary>
+    internal static void DeleteSharedExpressionCore(TOM.Model model, string name)
+    {
+        var expr = model.Expressions.Find(name)
+                   ?? throw new InvalidOperationException($"Shared expression '{name}' not found.");
+        var referencers = new List<string>();
+        foreach (var (label, code, _) in EnumerateMDocuments(model, skipExpression: name))
+        {
+            var scan = ScanMForName(code, name);
+            if ((scan.HasQuotedRef || scan.HasBareRef) && !scan.DeclaresLocally) referencers.Add(label);
+        }
+        if (referencers.Count > 0)
+            throw new InvalidOperationException(
+                $"Cannot delete shared expression '{name}': it is referenced in: {string.Join(", ", referencers)}. Repoint or remove those references first.");
+        model.Expressions.Remove(expr);
+    }
+
+    /// <summary>Every M document in the model: table partitions with an M source, plus shared expressions
+    /// (optionally excluding the one being operated on). The apply action writes rewritten code back.</summary>
+    private static IEnumerable<(string label, string code, Action<string> apply)> EnumerateMDocuments(
+        TOM.Model model, string? skipExpression)
+    {
+        foreach (var t in model.Tables)
+            foreach (var p in t.Partitions)
+                if (p.Source is TOM.MPartitionSource mps && mps.Expression is { Length: > 0 })
+                {
+                    var target = mps;   // capture per iteration
+                    yield return ($"partition {t.Name}/{p.Name}", mps.Expression, s => target.Expression = s);
+                }
+        foreach (var e in model.Expressions)
+        {
+            if (skipExpression != null && string.Equals(e.Name, skipExpression, StringComparison.Ordinal)) continue;
+            if (e.Expression is { Length: > 0 })
+            {
+                var target = e;
+                yield return ($"shared expression {e.Name}", e.Expression, s => target.Expression = s);
+            }
+        }
+    }
+
+    internal sealed record MReferenceScan(bool HasQuotedRef, bool HasBareRef, bool DeclaresLocally);
+
+    /// <summary>Scan one M document for uses of a shared-expression name: quoted (#"name") and bare
+    /// identifier references, and local DECLARATIONS (token followed by = or =>, which shadow the
+    /// shared name). String literals and comments are masked out first so text content never matches.</summary>
+    internal static MReferenceScan ScanMForName(string code, string name)
+    {
+        string masked = MaskMLiteralsAndComments(code);
+        bool quotedRef = false, bareRef = false, declares = false;
+
+        string quotedToken = "#\"" + name.Replace("\"", "\"\"") + "\"";
+        int idx = 0;
+        while ((idx = masked.IndexOf(quotedToken, idx, StringComparison.Ordinal)) >= 0)
+        {
+            int after = idx + quotedToken.Length;
+            // the token's closing quote must really close the identifier - a following '"' means we
+            // matched the first half of an escaped "" inside a LONGER quoted identifier.
+            if (after < masked.Length && masked[after] == '"') { idx = after; continue; }
+            if (IsFollowedByAssignment(masked, after)) declares = true; else quotedRef = true;
+            idx = after;
+        }
+
+        if (IsValidBareMIdentifier(name))
+        {
+            idx = 0;
+            while ((idx = masked.IndexOf(name, idx, StringComparison.Ordinal)) >= 0)
+            {
+                int after = idx + name.Length;
+                char prev = idx > 0 ? masked[idx - 1] : '\0';
+                char next = after < masked.Length ? masked[after] : '\0';
+                bool prevOk = prev == '\0' || (!char.IsLetterOrDigit(prev)
+                    && prev != '_' && prev != '.' && prev != '#' && prev != '"' && prev != '[');
+                bool nextOk = next == '\0' || (!char.IsLetterOrDigit(next) && next != '_' && next != '.');
+                if (prevOk && nextOk)
+                {
+                    if (IsFollowedByAssignment(masked, after)) declares = true; else bareRef = true;
+                }
+                idx = after;
+            }
+        }
+        return new MReferenceScan(quotedRef, bareRef, declares);
+    }
+
+    /// <summary>Rewrite every reference to oldName in one M document. Callers must have established via
+    /// <see cref="ScanMForName"/> that the document does not declare the name locally.</summary>
+    internal static string RewriteMReferences(string code, string oldName, string newName)
+    {
+        string masked = MaskMLiteralsAndComments(code);
+        string quotedOld = "#\"" + oldName.Replace("\"", "\"\"") + "\"";
+        string quotedNew = "#\"" + newName.Replace("\"", "\"\"") + "\"";
+        string bareNew = IsValidBareMIdentifier(newName) ? newName : quotedNew;
+
+        var spans = new List<(int start, int len, string replacement)>();
+        int idx = 0;
+        while ((idx = masked.IndexOf(quotedOld, idx, StringComparison.Ordinal)) >= 0)
+        {
+            int after = idx + quotedOld.Length;
+            if (after < masked.Length && masked[after] == '"') { idx = after; continue; }
+            spans.Add((idx, quotedOld.Length, quotedNew));
+            idx = after;
+        }
+        if (IsValidBareMIdentifier(oldName))
+        {
+            idx = 0;
+            while ((idx = masked.IndexOf(oldName, idx, StringComparison.Ordinal)) >= 0)
+            {
+                int after = idx + oldName.Length;
+                char prev = idx > 0 ? masked[idx - 1] : '\0';
+                char next = after < masked.Length ? masked[after] : '\0';
+                bool prevOk = prev == '\0' || (!char.IsLetterOrDigit(prev)
+                    && prev != '_' && prev != '.' && prev != '#' && prev != '"' && prev != '[');
+                bool nextOk = next == '\0' || (!char.IsLetterOrDigit(next) && next != '_' && next != '.');
+                if (prevOk && nextOk) spans.Add((idx, oldName.Length, bareNew));
+                idx = after;
+            }
+        }
+        foreach (var (start, len, replacement) in spans.OrderByDescending(s => s.start))
+            code = code.Remove(start, len).Insert(start, replacement);
+        return code;
+    }
+
+    /// <summary>Mask string literals and comments to spaces (same length, so positions stay valid) while
+    /// keeping code and #"quoted identifiers" intact - the M-aware pre-pass for reference scanning.</summary>
+    internal static string MaskMLiteralsAndComments(string code)
+    {
+        var chars = code.ToCharArray();
+        int i = 0;
+        while (i < chars.Length)
+        {
+            char ch = chars[i];
+            if (ch == '#' && i + 1 < chars.Length && chars[i + 1] == '"')
+            {
+                // quoted identifier - KEEP (this is what reference scans look for); "" escapes inside.
+                i += 2;
+                while (i < chars.Length)
+                {
+                    if (chars[i] == '"')
+                    {
+                        if (i + 1 < chars.Length && chars[i + 1] == '"') { i += 2; continue; }
+                        i++; break;
+                    }
+                    i++;
+                }
+            }
+            else if (ch == '"')
+            {
+                chars[i] = ' '; i++;
+                while (i < chars.Length)
+                {
+                    if (chars[i] == '"')
+                    {
+                        if (i + 1 < chars.Length && chars[i + 1] == '"') { chars[i] = ' '; chars[i + 1] = ' '; i += 2; continue; }
+                        chars[i] = ' '; i++; break;
+                    }
+                    chars[i] = ' '; i++;
+                }
+            }
+            else if (ch == '/' && i + 1 < chars.Length && chars[i + 1] == '/')
+            {
+                while (i < chars.Length && chars[i] != '\n') { chars[i] = ' '; i++; }
+            }
+            else if (ch == '/' && i + 1 < chars.Length && chars[i + 1] == '*')
+            {
+                chars[i] = ' '; chars[i + 1] = ' '; i += 2;
+                while (i < chars.Length)
+                {
+                    if (chars[i] == '*' && i + 1 < chars.Length && chars[i + 1] == '/')
+                    { chars[i] = ' '; chars[i + 1] = ' '; i += 2; break; }
+                    chars[i] = ' '; i++;
+                }
+            }
+            else i++;
+        }
+        return new string(chars);
+    }
+
+    private static bool IsFollowedByAssignment(string masked, int pos)
+    {
+        while (pos < masked.Length && char.IsWhiteSpace(masked[pos])) pos++;
+        return pos < masked.Length && masked[pos] == '=';   // covers both '=' and '=>'
+    }
+
+    private static readonly HashSet<string> MKeywords = new(StringComparer.Ordinal)
+    {
+        "and", "as", "each", "else", "error", "false", "if", "in", "is", "let", "meta", "not",
+        "null", "or", "otherwise", "section", "shared", "then", "true", "try", "type",
+    };
+
+    /// <summary>Can this name appear as a BARE M identifier (no #"" quoting)? Letter/underscore start,
+    /// then letters/digits/underscores/dots, and not a reserved keyword.</summary>
+    internal static bool IsValidBareMIdentifier(string name)
+    {
+        if (string.IsNullOrEmpty(name) || MKeywords.Contains(name)) return false;
+        if (!char.IsLetter(name[0]) && name[0] != '_') return false;
+        for (int i = 1; i < name.Length; i++)
+        {
+            char c = name[i];
+            if (!char.IsLetterOrDigit(c) && c != '_' && c != '.') return false;
+        }
+        return true;
+    }
+
+    // ================================================================ Wave G1: move measure
+    public object MoveMeasure(string sessionId, string measure, string targetTable)
+    {
+        var model = _sessions.GetModel(sessionId).Model;
+        var (m, fromTable) = MoveMeasureCore(model, measure, targetTable);
+        ModelTxn.Save(model);
+        return Persisted(new { moved = m.Name, from = fromTable, to = targetTable,
+            note = "KPI, format string, display folder, description, annotations, lineage tag and culture translations all travelled with the measure." });
+    }
+
+    /// <summary>Move via a deep CLONE (TOM refuses re-attaching a removed object): the clone carries
+    /// KPI, format string, folder, description, annotations, detail rows and lineage tag; culture
+    /// translations hold object references, so they are captured first and re-pointed at the clone.</summary>
+    internal static (TOM.Measure measure, string fromTable) MoveMeasureCore(TOM.Model model, string measure, string targetTable)
+    {
+        var target = Table(model, targetTable);
+        TOM.Table? src = null; TOM.Measure? m = null;
+        foreach (var t in model.Tables)
+        {
+            var hit = t.Measures.Find(measure);
+            if (hit != null) { src = t; m = hit; break; }
+        }
+        if (m == null || src == null)
+            throw new InvalidOperationException($"Measure '{measure}' not found in the model.");
+        if (ReferenceEquals(src, target))
+            throw new InvalidOperationException($"Measure '{measure}' is already on '{targetTable}'.");
+        if (target.Measures.Contains(measure))
+            throw new InvalidOperationException($"Table '{targetTable}' already has a measure named '{measure}'.");
+
+        // capture + detach translations BEFORE the removal so they never dangle on a removed object.
+        var captured = new List<(TOM.Culture culture, TOM.TranslatedProperty prop, string? value)>();
+        foreach (var c in model.Cultures)
+            foreach (var tr in c.ObjectTranslations.Where(o => ReferenceEquals(o.Object, m)).ToList())
+            {
+                captured.Add((c, tr.Property, tr.Value));
+                c.ObjectTranslations.Remove(tr);
+            }
+
+        var clone = m.Clone();
+        src.Measures.Remove(m);
+        target.Measures.Add(clone);
+        foreach (var (culture, prop, value) in captured)
+            culture.ObjectTranslations.Add(new TOM.ObjectTranslation { Object = clone, Property = prop, Value = value ?? "" });
+        return (clone, src.Name);
+    }
+
+    // ================================================================ Wave G1: hierarchy level CRUD
+    public object AddHierarchyLevel(string sessionId, string table, string hierarchy, string column,
+        int? ordinal, string? levelName)
+    {
+        var model = _sessions.GetModel(sessionId).Model;
+        var level = AddHierarchyLevelCore(model, table, hierarchy, column, ordinal, levelName);
+        ModelTxn.Save(model);
+        return Persisted(new { hierarchy = $"{table}.{hierarchy}", level = level.Name, ordinal = level.Ordinal });
+    }
+
+    internal static TOM.Level AddHierarchyLevelCore(TOM.Model model, string table, string hierarchy,
+        string column, int? ordinal, string? levelName)
+    {
+        var t = Table(model, table);
+        var h = t.Hierarchies.Find(hierarchy)
+                ?? throw new InvalidOperationException($"Hierarchy '{hierarchy}' not found on '{table}'.");
+        var col = Column(t, column);
+        string name = string.IsNullOrWhiteSpace(levelName) ? column : levelName;
+        if (h.Levels.Contains(name))
+            throw new InvalidOperationException($"Level '{name}' already exists on '{table}'.'{hierarchy}'.");
+        if (h.Levels.Any(l => ReferenceEquals(l.Column, col)))
+            throw new InvalidOperationException($"Column '{table}'[{column}] is already a level of '{hierarchy}'.");
+        var ordered = h.Levels.OrderBy(l => l.Ordinal).ToList();
+        int insertAt = ordinal is { } o ? Math.Clamp(o, 0, ordered.Count) : ordered.Count;
+        var level = new TOM.Level { Name = name, Column = col };
+        h.Levels.Add(level);
+        ordered.Insert(insertAt, level);
+        for (int i = 0; i < ordered.Count; i++) ordered[i].Ordinal = i;   // keep ordinals dense
+        return level;
+    }
+
+    public object RemoveHierarchyLevel(string sessionId, string table, string hierarchy, string level)
+    {
+        var model = _sessions.GetModel(sessionId).Model;
+        RemoveHierarchyLevelCore(model, table, hierarchy, level);
+        ModelTxn.Save(model);
+        return Persisted(new { hierarchy = $"{table}.{hierarchy}", removedLevel = level });
+    }
+
+    internal static void RemoveHierarchyLevelCore(TOM.Model model, string table, string hierarchy, string level)
+    {
+        var t = Table(model, table);
+        var h = t.Hierarchies.Find(hierarchy)
+                ?? throw new InvalidOperationException($"Hierarchy '{hierarchy}' not found on '{table}'.");
+        var l = h.Levels.Find(level)
+                ?? throw new InvalidOperationException(
+                    $"Level '{level}' not found on '{table}'.'{hierarchy}'. Levels: {string.Join(", ", h.Levels.Select(x => x.Name))}.");
+        if (h.Levels.Count == 1)
+            throw new InvalidOperationException(
+                $"'{level}' is the last level of '{hierarchy}' - a hierarchy cannot be empty. Use delete_hierarchy instead.");
+        h.Levels.Remove(l);
+        int i = 0;
+        foreach (var lv in h.Levels.OrderBy(x => x.Ordinal)) lv.Ordinal = i++;
+    }
+
+    // ================================================================ Wave G1: culture / translation CRUD completion
+    public object ListCultures(string sessionId)
+    {
+        var model = _sessions.GetModel(sessionId).Model;
+        var cultures = model.Cultures.Select(c => new
+        {
+            name = c.Name,
+            translations = c.ObjectTranslations.Count,
+            hasLinguisticMetadata = c.LinguisticMetadata != null,
+        }).ToList();
+        return new { ok = true, count = cultures.Count, cultures };
+    }
+
+    public object DeleteCulture(string sessionId, string locale)
+    {
+        var model = _sessions.GetModel(sessionId).Model;
+        DeleteCultureCore(model, locale);
+        ModelTxn.Save(model);
+        return Persisted(new { deletedCulture = locale });
+    }
+
+    internal static void DeleteCultureCore(TOM.Model model, string locale)
+    {
+        var c = model.Cultures.Find(locale)
+                ?? throw new InvalidOperationException(
+                    $"Culture '{locale}' not found. Cultures: {(model.Cultures.Count > 0 ? string.Join(", ", model.Cultures.Select(x => x.Name)) : "(none)")}.");
+        model.Cultures.Remove(c);
+    }
+
+    public object ListTranslations(string sessionId, string? culture)
+    {
+        var model = _sessions.GetModel(sessionId).Model;
+        var rows = ListTranslationsCore(model, culture);
+        return new { ok = true, count = rows.Count, translations = rows };
+    }
+
+    internal static List<object> ListTranslationsCore(TOM.Model model, string? culture)
+    {
+        IEnumerable<TOM.Culture> cultures = model.Cultures;
+        if (!string.IsNullOrWhiteSpace(culture))
+        {
+            var c = model.Cultures.Find(culture)
+                    ?? throw new InvalidOperationException($"Culture '{culture}' not found.");
+            cultures = new[] { c };
+        }
+        var rows = new List<object>();
+        foreach (var c in cultures)
+            foreach (var o in c.ObjectTranslations)
+                rows.Add(new
+                {
+                    culture = c.Name,
+                    objectType = o.Object?.ObjectType.ToString(),
+                    objectName = (o.Object as TOM.NamedMetadataObject)?.Name,
+                    table = (o.Object?.Parent as TOM.Table)?.Name,
+                    property = o.Property.ToString(),
+                    value = o.Value,
+                });
+        return rows;
+    }
+
+    public object DeleteTranslation(string sessionId, string culture, string objectType, string objectName,
+        string property, string? table)
+    {
+        var model = _sessions.GetModel(sessionId).Model;
+        DeleteTranslationCore(model, culture, objectType, objectName, property, table);
+        ModelTxn.Save(model);
+        return Persisted(new { culture, objectType, objectName, property, deleted = true });
+    }
+
+    internal static void DeleteTranslationCore(TOM.Model model, string culture, string objectType,
+        string objectName, string property, string? table)
+    {
+        var c = model.Cultures.Find(culture)
+                ?? throw new InvalidOperationException($"Culture '{culture}' not found.");
+        var prop = ParseTranslatedProperty(property);
+        var target = ResolveTranslationTarget(model, objectType, objectName, table);
+        var existing = c.ObjectTranslations.FirstOrDefault(o => ReferenceEquals(o.Object, target) && o.Property == prop)
+                       ?? throw new InvalidOperationException(
+                           $"No {prop} translation for '{objectName}' in culture '{culture}'.");
+        c.ObjectTranslations.Remove(existing);
+    }
+
+    // ================================================================ Wave G1: partition CRUD
+    public object AddPartition(string sessionId, string table, string name, string m, string? mode)
+    {
+        var session = _sessions.GetModel(sessionId);
+        var model = session.Model;
+        var p = AddPartitionCore(model, session.MDirty, table, name, m, mode);
+        ModelTxn.Save(model);
+        return Persisted(new { table, partition = p.Name, mode = p.Mode.ToString(),
+            refreshRequired = true, refreshRequiredBeforeSave = true });
+    }
+
+    internal static TOM.Partition AddPartitionCore(TOM.Model model, MDirtyTracker tracker, string table,
+        string name, string m, string? mode)
+    {
+        var t = Table(model, table);
+        if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("Partition name is required.");
+        if (string.IsNullOrWhiteSpace(m)) throw new InvalidOperationException("An M expression is required for the new partition.");
+        if (t.Partitions.Contains(name))
+            throw new InvalidOperationException($"Partition '{name}' already exists on '{table}'.");
+        var p = new TOM.Partition { Name = name, Source = new TOM.MPartitionSource { Expression = m } };
+        if (!string.IsNullOrWhiteSpace(mode)) p.Mode = ParseModeType(mode);
+        t.Partitions.Add(p);
+        // a brand-new M partition has never refreshed - the same forced-refresh rule as any M edit.
+        tracker.Mark($"add_partition {table}/{name}");
+        return p;
+    }
+
+    public object DeletePartition(string sessionId, string table, string name)
+    {
+        var session = _sessions.GetModel(sessionId);
+        var model = session.Model;
+        DeletePartitionCore(model, session.MDirty, table, name);
+        ModelTxn.Save(model);
+        return Persisted(new { table, deletedPartition = name, refreshRequiredBeforeSave = true });
+    }
+
+    internal static void DeletePartitionCore(TOM.Model model, MDirtyTracker tracker, string table, string name)
+    {
+        var t = Table(model, table);
+        var p = t.Partitions.Find(name)
+                ?? throw new InvalidOperationException(
+                    $"Partition '{name}' not found on '{table}'. Partitions: {string.Join(", ", t.Partitions.Select(x => x.Name))}.");
+        if (t.Partitions.Count == 1)
+            throw new InvalidOperationException(
+                $"'{name}' is the only partition on '{table}' - a table needs at least one. Use delete_table to remove the whole table.");
+        t.Partitions.Remove(p);
+        tracker.Mark($"delete_partition {table}/{name}");
+    }
+
+    public object ListPartitions(string sessionId, string? table)
+    {
+        var model = _sessions.GetModel(sessionId).Model;
+        var tables = table is null ? model.Tables.AsEnumerable() : new[] { Table(model, table) };
+        var rows = tables.SelectMany(t => t.Partitions.Select(p => new
+        {
+            table = t.Name,
+            partition = p.Name,
+            sourceType = p.SourceType.ToString(),
+            mode = p.Mode.ToString(),
+            state = p.State.ToString(),
+            refreshedTime = p.RefreshedTime == DateTime.MinValue ? (DateTime?)null : p.RefreshedTime,
+        })).ToList();
+        return new { ok = true, count = rows.Count, partitions = rows };
+    }
+
+    public object RefreshPartition(string sessionId, string table, string name)
+    {
+        var session = _sessions.GetModel(sessionId);
+        var model = session.Model;
+        var t = Table(model, table);
+        var p = t.Partitions.Find(name)
+                ?? throw new InvalidOperationException(
+                    $"Partition '{name}' not found on '{table}'. Partitions: {string.Join(", ", t.Partitions.Select(x => x.Name))}.");
+        p.RequestRefresh(TOM.RefreshType.Full);
+        bool saved = ModelTxn.Save(model);
+        return Persisted(new { refreshed = $"{table}/{name}", type = "Full", executed = saved,
+            note = saved ? "Partition refreshed." : "A model transaction is open - the refresh runs at commit_model_transaction." });
+    }
+
+    // ================================================================ Wave G1: calendar object CRUD (annotation fallback)
+    public object ListCalendars(string sessionId)
+    {
+        var model = _sessions.GetModel(sessionId).Model;
+        var rows = ListCalendarsCore(model);
+        return new { ok = true, count = rows.Count, calendars = rows,
+            note = "Read from PBI_Calendar table annotations - the Wave R fallback while the native calendar/calendarColumnGroup TOM objects are absent from this build." };
+    }
+
+    internal static List<object> ListCalendarsCore(TOM.Model model)
+    {
+        var rows = new List<object>();
+        foreach (var t in model.Tables)
+        {
+            var ann = t.Annotations.Find("PBI_Calendar");
+            if (ann?.Value is not { Length: > 0 } v) continue;
+            string? primary = null;
+            var groups = new List<string[]>();
+            try
+            {
+                var doc = System.Text.Json.Nodes.JsonNode.Parse(v)!.AsObject();
+                primary = (string?)doc["columnName"];
+                if (doc["calendarColumnGroups"] is System.Text.Json.Nodes.JsonArray arr)
+                    foreach (var g in arr)
+                        groups.Add(g?["columnNames"]?.AsArray().Select(n => (string?)n ?? "").ToArray()
+                                   ?? Array.Empty<string>());
+            }
+            catch { /* malformed annotation - the raw value is still surfaced */ }
+            rows.Add(new { table = t.Name, primaryColumn = primary, columnGroups = groups, raw = v });
+        }
+        return rows;
+    }
+
+    public object UpdateCalendar(string sessionId, string table, string? primaryColumn, string[]? associatedColumns)
+    {
+        var model = _sessions.GetModel(sessionId).Model;
+        string value = UpdateCalendarCore(model, table, primaryColumn, associatedColumns);
+        ModelTxn.Save(model);
+        return Persisted(new { table, calendar = value,
+            note = "PBI_Calendar table annotation updated (the Wave R fallback - native TOM calendar objects are absent from this build)." });
+    }
+
+    internal static string UpdateCalendarCore(TOM.Model model, string table, string? primaryColumn,
+        string[]? associatedColumns)
+    {
+        var t = Table(model, table);
+        var ann = t.Annotations.Find("PBI_Calendar")
+                  ?? throw new InvalidOperationException(
+                      $"Table '{table}' has no PBI_Calendar annotation. Run add_calendar_based_time_intelligence first.");
+        System.Text.Json.Nodes.JsonObject doc;
+        try { doc = System.Text.Json.Nodes.JsonNode.Parse(ann.Value ?? "")!.AsObject(); }
+        catch { doc = new System.Text.Json.Nodes.JsonObject(); }
+
+        if (!string.IsNullOrWhiteSpace(primaryColumn))
+            doc["columnName"] = Column(t, primaryColumn).Name;   // validate + canonical casing
+        if (associatedColumns is { Length: > 0 })
+        {
+            var cols = new System.Text.Json.Nodes.JsonArray();
+            foreach (var c in associatedColumns) cols.Add(Column(t, c.Trim()).Name);
+            doc["calendarColumnGroups"] = new System.Text.Json.Nodes.JsonArray
+            {
+                new System.Text.Json.Nodes.JsonObject { ["columnNames"] = cols },
+            };
+        }
+        if (doc["columnName"] is null)
+            throw new InvalidOperationException("The calendar annotation has no primary column - pass primaryColumn.");
+        ann.Value = doc.ToJsonString();
+        return ann.Value;
+    }
+
+    public object DeleteCalendar(string sessionId, string table)
+    {
+        var model = _sessions.GetModel(sessionId).Model;
+        DeleteCalendarCore(model, table);
+        ModelTxn.Save(model);
+        return Persisted(new { table, deletedCalendar = true });
+    }
+
+    internal static void DeleteCalendarCore(TOM.Model model, string table)
+    {
+        var t = Table(model, table);
+        var ann = t.Annotations.Find("PBI_Calendar")
+                  ?? throw new InvalidOperationException($"Table '{table}' has no PBI_Calendar annotation.");
+        t.Annotations.Remove(ann);
+    }
 
     // ---------------------------------------------------------------- helpers
     private static TOM.Table Table(TOM.Model m, string name) =>

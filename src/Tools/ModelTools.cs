@@ -695,14 +695,18 @@ public static class ModelTools
     // ================================================================ Wave P: parameterised generators
 
     [McpServerTool(Name = "add_time_intelligence_measures")]
-    [Description("Generate the full time-intelligence measure set off a base measure: YTD/QTD/MTD, PY/PM, MoM/YoY (+%), PYTD/YOYTD (+%). fiscalYearEnd (MM-DD, e.g. 06-30) drives fiscal *TD.")]
-    public static string AddTimeIntelligenceMeasures(ModelService model, string sessionId,
-        [Description("home table for the new measures")] string table,
-        [Description("base measure name, e.g. Total Sales")] string baseMeasure,
-        [Description("date table name")] string dateTable,
-        [Description("date column name on the date table")] string dateColumn,
-        [Description("fiscal year-end MM-DD (optional, e.g. 06-30)")] string? fiscalYearEnd = null)
-        => J.Try(() => model.AddTimeIntelligenceMeasures(sessionId, table, baseMeasure, dateTable, dateColumn, fiscalYearEnd));
+    [Description("Generate the full time-intelligence measure set off a base measure: YTD/QTD/MTD, PY/PM, MoM/YoY (+%), PYTD/YOYTD (+%). fiscalYearEnd (MM-DD, e.g. 06-30) drives fiscal *TD. target=pbip: pass pbipFolder instead of sessionId to write the SAME measures OFFLINE into a PBIP semantic model's TMDL (no engine; collision-checked appends).")]
+    public static string AddTimeIntelligenceMeasures(ModelService model,
+        [Description("sessionId from connect_model (live engine; pass exactly one of sessionId / pbipFolder)")] string? sessionId = null,
+        [Description("home table for the new measures")] string table = "",
+        [Description("base measure name, e.g. Total Sales")] string baseMeasure = "",
+        [Description("date table name")] string dateTable = "",
+        [Description("date column name on the date table")] string dateColumn = "",
+        [Description("fiscal year-end MM-DD (optional, e.g. 06-30)")] string? fiscalYearEnd = null,
+        [Description("target=pbip: a PBIP <name>.SemanticModel / TMDL definition folder to edit OFFLINE (engine-free)")] string? pbipFolder = null)
+        => J.Try(() => GeneratorTarget.Run(sessionId, pbipFolder,
+            () => model.AddTimeIntelligenceMeasures(sessionId!, table, baseMeasure, dateTable, dateColumn, fiscalYearEnd),
+            () => OfflineTmdlGenerators.AddTimeIntelligenceMeasures(pbipFolder!, table, baseMeasure, dateTable, dateColumn, fiscalYearEnd)));
 
     [McpServerTool(Name = "add_running_total")]
     [Description("Generate a running-total measure. Provide dateTable+dateColumn for a date cumulative, OR sortColumn (Table[Column]) for a generic / Pareto running total.")]
@@ -980,9 +984,14 @@ public static class ModelTools
         => J.Try(() => model.SetTableVisibility(sessionId, table, hidden));
 
     [McpServerTool(Name = "rename_column")]
-    [Description("Rename a column (updates the model object; references by old name in M/DAX are not rewritten).")]
-    public static string RenameColumn(ModelService model, string sessionId, string table, string column, string newName)
-        => J.Try(() => model.RenameColumn(sessionId, table, column, newName));
+    [Description("Rename a column. With propagate=true (the default) every DAX reference model-wide is rewritten too - measures, calculated columns/tables, RLS filters, calc items, format-string/detail-rows/KPI expressions - atomically (one SaveChanges; any failure rolls everything back), and when reportSource is given the report's bindings (projections, queryRefs, filters at all scopes, sorts, conditional-formatting/chrome, on both legacy Layout and PBIR) are rewritten as well. propagate=false renames the object only, leaving references by the old name in M/DAX untouched.")]
+    public static string RenameColumn(ModelService model, ReportService report, PbirService pbir,
+        string sessionId, string table, string column, string newName,
+        [Description("rewrite every DAX reference model-wide (and report bindings when reportSource is given); false = rename the object only")] bool propagate = true,
+        [Description("optional report to rewrite: a reportSessionId (open_report), a pbirSessionId (read_pbir), or a PBIR .pbix/PBIP folder path")] string? reportSource = null)
+        => J.Try(() => propagate
+            ? model.RenameColumnPropagating(sessionId, table, column, newName, ReportRenameTargets.Resolve(report, pbir, reportSource))
+            : model.RenameColumn(sessionId, table, column, newName));
 
     [McpServerTool(Name = "preview_table")]
     [Description("Return the first N rows of a table (TOPN) to inspect the actual data after a refresh.")]
@@ -990,19 +999,32 @@ public static class ModelTools
         => J.Try(() => model.RunDax(sessionId, $"TOPN({rows}, '{table.Replace("'", "''")}')", rows));
 
     [McpServerTool(Name = "create_date_table")]
-    [Description("Create a fully-formed date table in ONE call: Date, Year, Quarter, Month, MonthYear + sort-by columns + a Year>Quarter>Month hierarchy. Then relate your fact's date column to <name>[Date]. Pass dateColumnRef (e.g. \"Fact[Date]\") to size the range to your data, else CALENDARAUTO() is used.")]
-    public static string CreateDateTable(ModelService model, string sessionId,
+    [Description("Create a fully-formed date table in ONE call: Date, Year, Quarter, Month, MonthYear + sort-by columns + a Year>Quarter>Month hierarchy. Then relate your fact's date column to <name>[Date]. Pass dateColumnRef (e.g. \"Fact[Date]\") to size the range to your data, else CALENDARAUTO() is used. target=pbip: pass pbipFolder instead of sessionId to write the SAME table as Desktop-faithful TMDL into a PBIP semantic model with NO engine (columns authored explicitly; data materialises on the first Desktop refresh).")]
+    public static string CreateDateTable(ModelService model,
+        [Description("sessionId from connect_model (live engine; pass exactly one of sessionId / pbipFolder)")] string? sessionId = null,
         [Description("table name, e.g. Calendar")] string name = "Calendar",
         [Description("date column to size the range, e.g. Fact_Sales[Week Ending] (optional)")] string? dateColumnRef = null,
-        [Description("also build a Year>Quarter>Month hierarchy")] bool hierarchy = true)
-        => J.Try(() => model.CreateDateTable(sessionId, name, dateColumnRef, hierarchy));
+        [Description("also build a Year>Quarter>Month hierarchy")] bool hierarchy = true,
+        [Description("target=pbip: a PBIP <name>.SemanticModel / TMDL definition folder to edit OFFLINE (engine-free)")] string? pbipFolder = null)
+        => J.Try(() => GeneratorTarget.Run(sessionId, pbipFolder,
+            () => model.CreateDateTable(sessionId!, name, dateColumnRef, hierarchy),
+            () => OfflineTmdlGenerators.CreateDateTable(pbipFolder!, name, dateColumnRef, hierarchy)));
 
     [McpServerTool(Name = "add_hierarchy")]
-    [Description("Create a drill-down hierarchy on a table from an ordered, comma-separated list of existing columns (e.g. \"Year,Quarter,Month\" or \"Segment,Subsegment,ItemDesc\").")]
-    public static string AddHierarchy(ModelService model, string sessionId, string table, string name,
-        [Description("ordered column names, comma-separated")] string levels)
-        => J.Try(() => model.AddHierarchy(sessionId, table,
-            name, levels.Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToArray()));
+    [Description("Create a drill-down hierarchy on a table from an ordered, comma-separated list of existing columns (e.g. \"Year,Quarter,Month\" or \"Segment,Subsegment,ItemDesc\"). target=pbip: pass pbipFolder instead of sessionId to apply the same edit OFFLINE to a PBIP semantic model's TMDL (no engine).")]
+    public static string AddHierarchy(ModelService model,
+        [Description("sessionId from connect_model (live engine; pass exactly one of sessionId / pbipFolder)")] string? sessionId = null,
+        [Description("the table to build the hierarchy on")] string table = "",
+        [Description("hierarchy name")] string name = "",
+        [Description("ordered column names, comma-separated")] string levels = "",
+        [Description("target=pbip: a PBIP <name>.SemanticModel / TMDL definition folder to edit OFFLINE (engine-free)")] string? pbipFolder = null)
+        => J.Try(() =>
+        {
+            var lv = levels.Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToArray();
+            return GeneratorTarget.Run(sessionId, pbipFolder,
+                () => model.AddHierarchy(sessionId!, table, name, lv),
+                () => OfflineTmdlGenerators.AddHierarchy(pbipFolder!, table, name, lv));
+        });
 
     [McpServerTool(Name = "add_time_intelligence")]
     [Description("Generate the standard time-intelligence measure set for a base measure: YTD, QTD, MTD, PY (prior year), and YoY %. Needs a date table column (e.g. Calendar[Date]).")]
@@ -1193,11 +1215,15 @@ public static class ModelTools
 
     // ---------------------------------------------------------------- calculation groups
     [McpServerTool(Name = "add_calculation_group")]
-    [Description("Turn a (single-column) table into a calculation group - the engine for reusable selectors like Time Intelligence (Current/YTD/PY/YoY) applied to ANY measure. After this, add items with add_calculation_item. Lower precedence is applied first when groups are nested.")]
-    public static string AddCalculationGroup(ModelService model, string sessionId,
-        [Description("the table to convert into a calculation group")] string table,
-        [Description("precedence when multiple groups exist (higher applies last; optional)")] int? precedence = null)
-        => J.Try(() => model.AddCalculationGroup(sessionId, table, precedence));
+    [Description("Turn a (single-column) table into a calculation group - the engine for reusable selectors like Time Intelligence (Current/YTD/PY/YoY) applied to ANY measure. After this, add items with add_calculation_item. Lower precedence is applied first when groups are nested. target=pbip: pass pbipFolder instead of sessionId to apply the edit OFFLINE to a PBIP semantic model's TMDL (no engine; a missing table is created whole and DiscourageImplicitMeasures is switched on).")]
+    public static string AddCalculationGroup(ModelService model,
+        [Description("sessionId from connect_model (live engine; pass exactly one of sessionId / pbipFolder)")] string? sessionId = null,
+        [Description("the table to convert into a calculation group")] string table = "",
+        [Description("precedence when multiple groups exist (higher applies last; optional)")] int? precedence = null,
+        [Description("target=pbip: a PBIP <name>.SemanticModel / TMDL definition folder to edit OFFLINE (engine-free)")] string? pbipFolder = null)
+        => J.Try(() => GeneratorTarget.Run(sessionId, pbipFolder,
+            () => model.AddCalculationGroup(sessionId!, table, precedence),
+            () => OfflineTmdlGenerators.AddCalculationGroup(pbipFolder!, table, precedence)));
 
     [McpServerTool(Name = "add_calculation_item")]
     [Description("Add a calculation item to a calculation group. The DAX usually wraps SELECTEDMEASURE(), e.g. \"CALCULATE(SELECTEDMEASURE(), DATESYTD('Calendar'[Date]))\" for a YTD item. ordinal sets display order; formatStringExpression sets a dynamic format for that item.")]
@@ -1471,9 +1497,21 @@ public static class ModelTools
 
     // ---------------------------------------------------------------- rename table
     [McpServerTool(Name = "rename_table")]
-    [Description("Rename a table (updates the model object; references by the old name in M/DAX are not rewritten).")]
-    public static string RenameTable(ModelService model, string sessionId, string table, string newName)
-        => J.Try(() => model.RenameTable(sessionId, table, newName));
+    [Description("Rename a table. With propagate=true (the default) every reference model-wide is rewritten too - quoted 'Table'[Col] and bare Table[Col] DAX forms across measures/calc columns/calc tables/RLS/calc items/KPIs, plus M query-name references (#\"Old\" and bare identifiers in partition M and shared expressions, the partition name kept in step) - atomically (one SaveChanges; any failure rolls everything back). When reportSource is given the report's bindings (From entities, projections, queryRefs, filters at all scopes, conditional-formatting/chrome, legacy Layout and PBIR) follow as well. propagate=false renames the object only. Sort-bys, hierarchies, relationships and translations carry over automatically in TOM either way.")]
+    public static string RenameTable(ModelService model, ReportService report, PbirService pbir,
+        string sessionId, string table, string newName,
+        [Description("rewrite every DAX/M reference model-wide (and report bindings when reportSource is given); false = rename the object only")] bool propagate = true,
+        [Description("optional report to rewrite: a reportSessionId (open_report), a pbirSessionId (read_pbir), or a PBIR .pbix/PBIP folder path")] string? reportSource = null)
+        => J.Try(() => propagate
+            ? model.RenameTablePropagating(sessionId, table, newName, ReportRenameTargets.Resolve(report, pbir, reportSource))
+            : model.RenameTable(sessionId, table, newName));
+
+    [McpServerTool(Name = "apply_rename_plan")]
+    [Description("APPLY an audit_naming rename plan through the propagating rename machinery: planJson = audit_naming's renamePlan ({renames:[{objectType, table, oldName, newName}]}, a bare array also accepted). Rows that cannot apply (missing object, collision, malformed) are skipped WITH the reason; the survivors run as ONE atomic batch - TOM renames plus every DAX/M reference rewrite in a single SaveChanges, report bindings rewritten too when reportSource is given. One result row per rename.")]
+    public static string ApplyRenamePlan(ModelService model, ReportService report, PbirService pbir, string sessionId,
+        [Description("the rename plan json: audit_naming's renamePlan, {renames:[...]}, or a bare array of {objectType, table, oldName, newName}")] string planJson,
+        [Description("optional report to rewrite: a reportSessionId (open_report), a pbirSessionId (read_pbir), or a PBIR .pbix/PBIP folder path")] string? reportSource = null)
+        => J.Try(() => model.ApplyRenamePlan(sessionId, planJson, ReportRenameTargets.Resolve(report, pbir, reportSource)));
 
     // ---------------------------------------------------------------- KPI extras
     [McpServerTool(Name = "update_kpi")]
@@ -1883,4 +1921,223 @@ public static class ModelTools
     public static string ExtractReportLevelMeasures(ModelService model, string sessionId,
         [Description("path to the .pbix whose report-level measures to promote")] string pbixPath)
         => J.Try(() => model.ExtractReportLevelMeasures(sessionId, pbixPath));
+
+    // ---------------------------------------------------------------- Wave G1: RLS execution
+
+    [McpServerTool(Name = "run_dax_as_role")]
+    [Description("Run a DAX query AS a security role: opens a second connection to the session's engine with Roles= (and optionally EffectiveUserName= for dynamic USERPRINCIPALNAME-driven RLS) so the engine applies the role's row-level filters, and returns the rows. Role names are validated against the model so a typo can never silently run unfiltered. Read-only.")]
+    public static string RunDaxAsRole(ModelService model, string sessionId,
+        [Description("the DAX query (bare table expressions get EVALUATE prefixed)")] string query,
+        [Description("role names, comma-separated (all applied together, as AS unions role filters)")] string roles,
+        [Description("impersonated UPN for dynamic RLS, e.g. user@contoso.com (optional)")] string? effectiveUserName = null,
+        [Description("max rows to return (default 200)")] int maxRows = 200)
+        => J.Try(() => model.RunDaxAsRole(sessionId, query, Split(roles), effectiveUserName, maxRows));
+
+    [McpServerTool(Name = "rls_test_harness")]
+    [Description("Prove the model's security filters: evaluate one DAX query under EVERY role in the model plus an unfiltered baseline, returning a per-role matrix of {role, rowCount, sampleRows, error}. A role whose rowCount equals the baseline is not filtering that query - the classic silent-RLS-gap detector. Read-only.")]
+    public static string RlsTestHarness(ModelService model, string sessionId,
+        [Description("the DAX query to evaluate per role (bare table expressions get EVALUATE prefixed)")] string query,
+        [Description("sample rows to return per role (default 5, max 100; rowCount is always the full count)")] int sampleRows = 5)
+        => J.Try(() => model.RlsTestHarness(sessionId, query, sampleRows));
+
+    // ---------------------------------------------------------------- Wave G1: model write-transactions
+
+    [McpServerTool(Name = "begin_model_transaction")]
+    [Description("Open a write-transaction on the session's model: subsequent model tools accumulate TOM changes WITHOUT SaveChanges until commit_model_transaction applies them all in one SaveChanges (rollback_model_transaction discards them). Refreshes requested inside the transaction run at commit. One transaction per session; queries against the engine see the pre-transaction state until commit.")]
+    public static string BeginModelTransaction(ModelService model, string sessionId)
+        => J.Try(() => model.BeginModelTransaction(sessionId));
+
+    [McpServerTool(Name = "commit_model_transaction")]
+    [Description("Commit the open model transaction: one real SaveChanges applies every accumulated change (and any deferred refresh requests). If SaveChanges fails the transaction stays open so you can fix the model or roll back - nothing is half-committed.")]
+    public static string CommitModelTransaction(ModelService model, string sessionId)
+        => J.Try(() => model.CommitModelTransaction(sessionId));
+
+    [McpServerTool(Name = "rollback_model_transaction")]
+    [Description("Roll back the open model transaction: discards every accumulated TOM change via Model.UndoLocalChanges - the engine never sees them.")]
+    public static string RollbackModelTransaction(ModelService model, string sessionId)
+        => J.Try(() => model.RollbackModelTransaction(sessionId));
+
+    [McpServerTool(Name = "get_transaction_status")]
+    [Description("Report whether a model transaction is open on the session, when it opened, and how many gated saves it has deferred so far. Read-only.")]
+    public static string GetTransactionStatus(ModelService model, string sessionId)
+        => J.Try(() => model.GetTransactionStatus(sessionId));
+
+    // ---------------------------------------------------------------- Wave G1: DAX benchmark + trace
+
+    [McpServerTool(Name = "dax_benchmark")]
+    [Description("Benchmark a DAX query: optionally clear the engine cache (XMLA ClearCache on the session database), then run the query N times returning {coldMs, warmMs[], rowCount}. Timings are client wall-clock per run (execution + full row drain) - honest about what is measured; pair with start_dax_trace/stop_dax_trace for the FE/SE split and cache hits.")]
+    public static string DaxBenchmark(ModelService model, string sessionId,
+        [Description("the DAX query (bare table expressions get EVALUATE prefixed)")] string query,
+        [Description("number of timed runs (default 2, max 20)")] int runs = 2,
+        [Description("issue ClearCache first so run 1 is a true cold run (default true)")] bool clearCache = true)
+        => J.Try(() => model.DaxBenchmark(sessionId, query, runs, clearCache));
+
+    [McpServerTool(Name = "start_dax_trace")]
+    [Description("Start an Analysis Services server trace on the session's engine capturing QueryEnd, VertiPaq SE QueryEnd, VertiPaq SE CacheMatch and DAXEvaluationLog events (DAXEvaluationLog is dropped automatically on engines that reject it). Run the queries to profile, then stop_dax_trace to collect. One trace per session.")]
+    public static string StartDaxTrace(ModelService model, string sessionId)
+        => J.Try(() => model.StartDaxTrace(sessionId));
+
+    [McpServerTool(Name = "stop_dax_trace")]
+    [Description("Stop the session's DAX trace and return the structured events plus the Server Timings arithmetic: total query ms, storage-engine ms (sum of subclass-0 VertiPaq scans), formula-engine ms (query minus SE, floored at 0 because SE threads run in parallel), SE query count and cache matches.")]
+    public static string StopDaxTrace(ModelService model, string sessionId)
+        => J.Try(() => model.StopDaxTrace(sessionId));
+
+    // ---------------------------------------------------------------- Wave G1: calculation item CRUD completion
+
+    [McpServerTool(Name = "update_calculation_item")]
+    [Description("Update an existing calculation item on a calculation group: DAX expression, ordinal, dynamic format string (empty string clears it) and/or rename it. Omitted properties are left unchanged.")]
+    public static string UpdateCalculationItem(ModelService model, string sessionId,
+        [Description("the calculation group table")] string table,
+        [Description("the calculation item to update")] string name,
+        [Description("new DAX expression (optional)")] string? daxExpression = null,
+        [Description("new ordinal (optional)")] int? ordinal = null,
+        [Description("new dynamic format string DAX; empty string removes it (optional)")] string? formatStringExpression = null,
+        [Description("rename the item (optional)")] string? newName = null)
+        => J.Try(() => model.UpdateCalculationItem(sessionId, table, name, daxExpression, ordinal, formatStringExpression, newName));
+
+    [McpServerTool(Name = "delete_calculation_item")]
+    [Description("Delete a calculation item from a calculation group.")]
+    public static string DeleteCalculationItem(ModelService model, string sessionId,
+        [Description("the calculation group table")] string table,
+        [Description("the calculation item to delete")] string name)
+        => J.Try(() => model.DeleteCalculationItem(sessionId, table, name));
+
+    // ---------------------------------------------------------------- Wave G1: shared expression rename / delete
+
+    [McpServerTool(Name = "rename_shared_expression")]
+    [Description("Rename a shared Power Query expression (parameter / staging query) AND rewrite every #\"name\" and bare-identifier reference to it across the other shared expressions and table partitions (string literals and comments are never touched). Refuses with the offending document list when another M document declares the same name locally (a let-step or lambda parameter shadows the shared name there, so a text rewrite would be unsafe). Refresh before saving the .pbix.")]
+    public static string RenameSharedExpression(ModelService model, string sessionId,
+        [Description("current shared expression name")] string name,
+        [Description("new name")] string newName)
+        => J.Try(() => model.RenameSharedExpression(sessionId, name, newName));
+
+    [McpServerTool(Name = "delete_shared_expression")]
+    [Description("Delete a shared Power Query expression (parameter / staging query). Refuses with the referencer list while any other M document (shared expression or table partition) still references it, so a dangling #\"name\" can never break the mashup silently.")]
+    public static string DeleteSharedExpression(ModelService model, string sessionId,
+        [Description("the shared expression to delete")] string name)
+        => J.Try(() => model.DeleteSharedExpression(sessionId, name));
+
+    // ---------------------------------------------------------------- Wave G1: move measure
+
+    [McpServerTool(Name = "move_measure")]
+    [Description("Move a measure to another table (its home table changes; DAX references to it are unaffected because measures are referenced as [Name]). KPI, format string, display folder, description, annotations, lineage tag and culture translations all travel with it (a deep clone is re-homed and translations are re-pointed - TOM forbids re-attaching a removed object).")]
+    public static string MoveMeasure(ModelService model, string sessionId,
+        [Description("the measure to move (searched across all tables)")] string measure,
+        [Description("the destination table")] string targetTable)
+        => J.Try(() => model.MoveMeasure(sessionId, measure, targetTable));
+
+    // ---------------------------------------------------------------- Wave G1: hierarchy level CRUD
+
+    [McpServerTool(Name = "add_hierarchy_level")]
+    [Description("Add a level to an existing hierarchy from a column on the same table. ordinal positions it (0 = top; omitted = appended at the bottom); remaining levels are renumbered densely.")]
+    public static string AddHierarchyLevel(ModelService model, string sessionId, string table,
+        [Description("the hierarchy to extend")] string hierarchy,
+        [Description("the column backing the new level")] string column,
+        [Description("position within the hierarchy, 0 = top (optional; default = bottom)")] int? ordinal = null,
+        [Description("level display name (optional; defaults to the column name)")] string? levelName = null)
+        => J.Try(() => model.AddHierarchyLevel(sessionId, table, hierarchy, column, ordinal, levelName));
+
+    [McpServerTool(Name = "remove_hierarchy_level")]
+    [Description("Remove a level from a hierarchy (remaining levels are renumbered densely). Refuses to remove the LAST level - a hierarchy cannot be empty; use delete_hierarchy instead.")]
+    public static string RemoveHierarchyLevel(ModelService model, string sessionId, string table,
+        [Description("the hierarchy")] string hierarchy,
+        [Description("the level to remove")] string level)
+        => J.Try(() => model.RemoveHierarchyLevel(sessionId, table, hierarchy, level));
+
+    // ---------------------------------------------------------------- Wave G1: culture / translation CRUD completion
+
+    [McpServerTool(Name = "list_cultures")]
+    [Description("List the model's cultures (locales): name, translation count, and whether linguistic (Q&A) metadata is attached. Read-only.")]
+    public static string ListCultures(ModelService model, string sessionId)
+        => J.Try(() => model.ListCultures(sessionId));
+
+    [McpServerTool(Name = "delete_culture")]
+    [Description("Delete a culture (locale) and all its translations and linguistic metadata from the model.")]
+    public static string DeleteCulture(ModelService model, string sessionId,
+        [Description("the culture locale to delete, e.g. fr-FR")] string locale)
+        => J.Try(() => model.DeleteCulture(sessionId, locale));
+
+    [McpServerTool(Name = "list_translations")]
+    [Description("List object translations - {culture, objectType, objectName, table, property, value} - for every culture or one. Read-only.")]
+    public static string ListTranslations(ModelService model, string sessionId,
+        [Description("restrict to one culture, e.g. fr-FR (optional)")] string? culture = null)
+        => J.Try(() => model.ListTranslations(sessionId, culture));
+
+    [McpServerTool(Name = "delete_translation")]
+    [Description("Delete ONE object translation: the translated Caption / Description / DisplayFolder of a model object in a culture. objectType = table | column | measure | hierarchy | model (column/measure/hierarchy need the table).")]
+    public static string DeleteTranslation(ModelService model, string sessionId,
+        [Description("the culture, e.g. fr-FR")] string culture,
+        [Description("table | column | measure | hierarchy | model")] string objectType,
+        [Description("the object's name")] string objectName,
+        [Description("Caption | Description | DisplayFolder")] string property,
+        [Description("host table for column/measure/hierarchy objects")] string? table = null)
+        => J.Try(() => model.DeleteTranslation(sessionId, culture, objectType, objectName, property, table));
+
+    // ---------------------------------------------------------------- Wave G1: partition CRUD
+
+    [McpServerTool(Name = "add_partition")]
+    [Description("Add an M partition to an existing table (e.g. to split a fact by year). mode = Import | DirectQuery | Dual | DirectLake (optional; engine default when omitted). The new partition has never refreshed - refresh before saving the .pbix.")]
+    public static string AddPartition(ModelService model, string sessionId, string table,
+        [Description("new partition name")] string name,
+        [Description("the partition's full M let-expression")] string m,
+        [Description("Import | DirectQuery | Dual | DirectLake (optional)")] string? mode = null)
+        => J.Try(() => model.AddPartition(sessionId, table, name, m, mode));
+
+    [McpServerTool(Name = "delete_partition")]
+    [Description("Delete a partition from a table (and its data on the next save). Refuses to delete the table's ONLY partition - use delete_table for that.")]
+    public static string DeletePartition(ModelService model, string sessionId, string table,
+        [Description("the partition to delete")] string name)
+        => J.Try(() => model.DeletePartition(sessionId, table, name));
+
+    [McpServerTool(Name = "list_partitions")]
+    [Description("List partitions - {table, partition, sourceType, mode, state, refreshedTime} - for the whole model or one table. Read-only.")]
+    public static string ListPartitions(ModelService model, string sessionId,
+        [Description("restrict to one table (optional)")] string? table = null)
+        => J.Try(() => model.ListPartitions(sessionId, table));
+
+    [McpServerTool(Name = "refresh_partition")]
+    [Description("Refresh ONE partition (RefreshType.Full) - cheaper than refresh_table when only one slice changed. Inside an open model transaction the refresh is deferred to commit.")]
+    public static string RefreshPartition(ModelService model, string sessionId, string table,
+        [Description("the partition to refresh")] string name)
+        => J.Try(() => model.RefreshPartition(sessionId, table, name));
+
+    // ---------------------------------------------------------------- Wave G1: calendar object CRUD (annotation fallback)
+
+    [McpServerTool(Name = "list_calendars")]
+    [Description("List the model's calendar-based time-intelligence definitions: table, primary column and column groups. FLAG: read from PBI_Calendar table annotations (the Wave R convention) because the native calendar/calendarColumnGroup TOM objects are absent from this build. Read-only.")]
+    public static string ListCalendars(ModelService model, string sessionId)
+        => J.Try(() => model.ListCalendars(sessionId));
+
+    [McpServerTool(Name = "update_calendar")]
+    [Description("Update a table's calendar definition: change the primary date column and/or replace the associated period-column group (columns are validated against the table). FLAG: stamped as the PBI_Calendar table annotation (the Wave R convention) because the native calendar TOM objects are absent from this build.")]
+    public static string UpdateCalendar(ModelService model, string sessionId,
+        [Description("the calendar table")] string table,
+        [Description("new primary date column (optional)")] string? primaryColumn = null,
+        [Description("replacement associated period columns, comma-separated (optional)")] string? associatedColumns = null)
+        => J.Try(() => model.UpdateCalendar(sessionId, table,
+            primaryColumn, string.IsNullOrWhiteSpace(associatedColumns) ? null : Split(associatedColumns)));
+
+    [McpServerTool(Name = "delete_calendar")]
+    [Description("Delete a table's calendar definition (removes the PBI_Calendar annotation - the Wave R convention while the native calendar TOM objects are absent from this build).")]
+    public static string DeleteCalendar(ModelService model, string sessionId,
+        [Description("the calendar table")] string table)
+        => J.Try(() => model.DeleteCalendar(sessionId, table));
+
+    // ================================================================ Wave G2: read-only audits + docs
+
+    [McpServerTool(Name = "audit_star_schema")]
+    [Description("READ-ONLY star-schema audit: classify every table (fact / dimension / date / bridge / disconnected) from the relationship topology + column types, then flag the schema smells - snowflaking, bidirectional filters, many-to-many, fact-to-fact relationships, a missing/unmarked date table, and descriptive text columns on fact tables. Returns a scored report (0-100) with a per-issue recommendation naming the fixing tool.")]
+    public static string AuditStarSchema(ModelService model, string sessionId)
+        => J.Try(() => model.AuditStarSchema(sessionId));
+
+    [McpServerTool(Name = "audit_naming")]
+    [Description("READ-ONLY naming audit over table/column/measure names (technical DIM_/FACT_/TBL_ prefixes, snake_case, camelCase, leading/trailing/doubled spaces, lowercase initials) returning an applyable RENAME PLAN json {renames:[{objectType, table, oldName, newName, reason}]}. PLAN ONLY - nothing is renamed by this tool; a propagating apply (rewriting DAX/M references to renamed objects) lands in a later wave. Collisions are skipped and reported.")]
+    public static string AuditNaming(ModelService model, string sessionId)
+        => J.Try(() => model.AuditNaming(sessionId));
+
+    [McpServerTool(Name = "export_data_dictionary")]
+    [Description("Export the model's data dictionary (tables, columns, measures with descriptions/types/format strings/DAX, plus relationships) rendered as Markdown or HTML, with a description COVERAGE score - the fraction of visible objects carrying a description (the missing-descriptions gap). Rendered from the TOM tree only; no queries are run.")]
+    public static string ExportDataDictionary(ModelService model, string sessionId,
+        [Description("md | html")] string format = "md")
+        => J.Try(() => model.ExportDataDictionary(sessionId, format));
 }

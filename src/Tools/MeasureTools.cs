@@ -8,17 +8,20 @@ namespace SuperBiMcp.Tools;
 public static class MeasureTools
 {
     [McpServerTool(Name = "add_measure")]
-    [Description("Add a DAX measure to a table. Commits to the live model (persist with File > Save in Desktop).")]
+    [Description("Add a DAX measure to a table. Commits to the live model (persist with File > Save in Desktop). target=pbip: pass pbipFolder instead of sessionId to write the measure OFFLINE into a PBIP semantic model's TMDL (no engine; collision-checked, /// doc comments preserved).")]
     public static string AddMeasure(
         ModelService model,
-        [Description("sessionId from connect_model")] string sessionId,
-        [Description("home table for the measure")] string table,
-        [Description("measure name")] string name,
-        [Description("DAX expression, e.g. SUM(Sales[Amount])")] string dax,
+        [Description("sessionId from connect_model (live engine; pass exactly one of sessionId / pbipFolder)")] string? sessionId = null,
+        [Description("home table for the measure")] string table = "",
+        [Description("measure name")] string name = "",
+        [Description("DAX expression, e.g. SUM(Sales[Amount])")] string dax = "",
         [Description("format string, e.g. \"#,0\" or \"0.0%\"")] string? formatString = null,
         [Description("display folder")] string? displayFolder = null,
-        [Description("description")] string? description = null)
-        => J.Try(() => model.AddMeasure(sessionId, table, name, dax, formatString, displayFolder, description));
+        [Description("description")] string? description = null,
+        [Description("target=pbip: a PBIP <name>.SemanticModel / TMDL definition folder to edit OFFLINE (engine-free)")] string? pbipFolder = null)
+        => J.Try(() => GeneratorTarget.Run(sessionId, pbipFolder,
+            () => model.AddMeasure(sessionId!, table, name, dax, formatString, displayFolder, description),
+            () => OfflineTmdlGenerators.AddMeasure(pbipFolder!, table, name, dax, formatString, displayFolder, description)));
 
     [McpServerTool(Name = "add_narrative_measure")]
     [Description("Auto-narrative: create a dynamic DAX text measure like 'Grated, Sliced drove +2.1% growth'. Names the top-N dimension members by contribution to the change (current - prior) and states the overall growth. Display it in a card (it updates live with slicers). Insight text without the native smart-narrative visual.")]
@@ -44,12 +47,22 @@ public static class MeasureTools
         => J.Try(() => model.UpdateMeasure(sessionId, table, name, dax, formatString, displayFolder));
 
     [McpServerTool(Name = "set_measure_properties")]
-    [Description("Set a measure's metadata that update_measure does not cover: hide/show it (hidden), set its description, and/or rename it (newName). Any omitted property is left unchanged. Use update_measure for the DAX / format string / display folder.")]
-    public static string SetMeasureProperties(ModelService model, string sessionId, string table, string measure,
+    [Description("Set a measure's metadata that update_measure does not cover: hide/show it (hidden), set its description, and/or rename it (newName). Any omitted property is left unchanged. Use update_measure for the DAX / format string / display folder. A rename with propagate=true (the default) rewrites every [Measure] reference model-wide - other measures, calc columns/tables, RLS filters, calc items, KPI/format-string/detail-rows expressions - atomically, and the report's bindings too when reportSource is given. propagate=false renames the object only.")]
+    public static string SetMeasureProperties(ModelService model, ReportService report, PbirService pbir,
+        string sessionId, string table, string measure,
         [Description("hide (true) or show (false) the measure")] bool? hidden = null,
         [Description("description for self-service users")] string? description = null,
-        [Description("rename the measure to this name")] string? newName = null)
-        => J.Try(() => model.SetMeasureProperties(sessionId, table, measure, hidden, description, newName));
+        [Description("rename the measure to this name")] string? newName = null,
+        [Description("with newName: rewrite every DAX reference model-wide (and report bindings when reportSource is given); false = rename the object only")] bool propagate = true,
+        [Description("optional report to rewrite on a rename: a reportSessionId (open_report), a pbirSessionId (read_pbir), or a PBIR .pbix/PBIP folder path")] string? reportSource = null)
+        => J.Try(() =>
+        {
+            bool renaming = !string.IsNullOrWhiteSpace(newName) && !newName!.Equals(measure, StringComparison.Ordinal);
+            if (!propagate || !renaming)
+                return model.SetMeasureProperties(sessionId, table, measure, hidden, description, newName);
+            return model.SetMeasurePropertiesPropagating(sessionId, table, measure, hidden, description, newName!,
+                ReportRenameTargets.Resolve(report, pbir, reportSource));
+        });
 
     [McpServerTool(Name = "delete_measure")]
     [Description("Delete a measure from a table.")]

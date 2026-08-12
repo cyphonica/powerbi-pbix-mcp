@@ -46,6 +46,26 @@ internal static class DaxGenerators
 
     private static string Inv(double d) => d.ToString(CultureInfo.InvariantCulture);
 
+    /// <summary>The create_date_table calculated-table DAX (Date + Year/Quarter/Month columns and
+    /// their sort keys) - ONE authoring shared by the live engine path and the offline TMDL path.</summary>
+    public static string DateTableDax(string? dateColumnRef)
+    {
+        string range = string.IsNullOrWhiteSpace(dateColumnRef)
+            ? "CALENDARAUTO()"
+            : $"CALENDAR(MIN({dateColumnRef}), MAX({dateColumnRef}))";
+        return
+            "ADDCOLUMNS(\n" +
+            $"    {range},\n" +
+            "    \"Year\", YEAR([Date]),\n" +
+            "    \"Quarter\", \"Q\" & FORMAT([Date], \"Q\"),\n" +
+            "    \"QuarterNo\", INT(FORMAT([Date], \"Q\")),\n" +
+            "    \"Month\", FORMAT([Date], \"mmm\"),\n" +
+            "    \"MonthNo\", MONTH([Date]),\n" +
+            "    \"MonthYear\", FORMAT([Date], \"mmm yyyy\"),\n" +
+            "    \"YearMonthNo\", YEAR([Date]) * 100 + MONTH([Date])\n" +
+            ")";
+    }
+
     // ================================================================ A. primitives
 
     /// <summary>
