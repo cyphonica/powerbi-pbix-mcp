@@ -1,23 +1,31 @@
 # Super BI MCP
 
-An MCP server that gives AI agents **full local Power BI authoring** - the semantic model, the report, and Power Query M - by editing `.pbix` and PBIP/PBIR files directly. Around **420 tools**, backed by ~1,000 automated tests.
+An MCP server that gives AI agents **full local Power BI authoring** - the semantic model, the report, and Power Query M - by editing `.pbix` and PBIP/PBIR files directly. **478 tools**, backed by ~1,800 automated tests.
 
-Point Claude (or any MCP client) at it and the agent can build a model, write the DAX, lay out the report pages and visuals, transform the Power Query, run a best-practice lint with automatic fixes, and hand you back a finished `.pbix` - all on your machine.
+Point Claude (or any MCP client) at it and the agent can build a model, write the DAX, lay out the report pages and visuals, transform the Power Query, lint and auto-fix best-practice violations, prove the RLS actually filters, rename a column across the model *and* every report binding in one atomic call, screenshot the rendered result out of a running Power BI Desktop, and hand you back a finished `.pbix` - all on your machine.
 
 ## Why this instead of the other Power BI MCP servers
 
-| | Super BI MCP | Microsoft Power BI Modeling MCP | Community servers |
+| | Super BI MCP | Microsoft Power BI Modeling MCP + agent skills | Community servers |
 |---|---|---|---|
-| Semantic model authoring (TOM) | Yes | Yes | Partial |
-| **Report authoring** (pages, visuals, filters, bookmarks) | Yes - legacy Layout **and** PBIR | No (explicitly out of scope) | Report-only or preview |
+| Semantic model authoring (TOM) | Yes, with write transactions + rollback | Yes | Partial |
+| **Report authoring** (pages, visuals, filters, bookmarks) | Yes - legacy Layout **and** PBIR, deterministic tools | Skill-guided raw JSON editing by the LLM (separate skill pack) | Report-only or preview |
 | **Direct `.pbix` editing** | Yes | No - PBIP files only | Rare |
 | Power Query M authoring | Yes - 60+ transform/generator tools | Analyze/refactor only | Rare |
-| Visual formatting | Deterministic property registry for 52 visual types, validated against the Power BI theme schema | n/a | Raw JSON edits by the LLM |
+| **Propagating renames** (model rename rewrites DAX, M, and every report binding, atomically) | Yes | No | One server, PBIP-only |
+| **Model-to-report cross-analysis** (usage, unused fields incl. conditional-formatting bindings, broken-reference repair) | Yes | No | Partial |
+| RLS **execution** testing (run any query as any role, per-role matrix) | Yes | No | Partial |
+| DAX benchmark + Analysis Services trace (FE/SE split, cache hits) | Yes | Benchmark yes | Partial |
+| Offline DAX linter (incl. catching hallucinated function names before they hit the engine) | Yes | No | One server |
+| Visual formatting | Deterministic property registry for 52 visual types, validated against the theme schema | n/a | Raw JSON edits |
 | Best Practice Analyzer | 89 rules, 28 with automatic fixes, Tabular Editor ruleset import | Loose | Rare |
-| DAX generators | Time-intelligence, ranking, segmentation, calc groups, dynamic RLS, custom calendars and more | n/a | n/a |
+| Desktop feedback loop (page screenshots + hot-reload from a running Desktop) | Yes - via the Desktop Bridge | Yes - same bridge, separate CLI | No |
+| Layout, star-schema, theme-compliance, naming and file-integrity **audits** | Yes | No | Partial |
+| DAX generators (time-intelligence, ranking, segmentation, calc groups, dynamic RLS, custom calendars) | Yes, live or straight to TMDL offline | n/a | Partial |
 | Works offline, no Fabric account | Yes | Yes (local mode) | Varies |
+| Ships as | **One integrated server** | A server + a skills pack + two CLIs | Single-purpose servers |
 
-The short version: Microsoft's official server stops at the semantic model. This one authors the **whole report** too, with deterministic tools instead of asking the LLM to hand-write layout JSON, and it works on the `.pbix` files you actually have.
+The short version: Microsoft's official server stops at the semantic model, and its report story is a separate skill pack that has the LLM hand-write layout JSON. This is **one server** that authors the whole artifact - model, report, and Power Query - with deterministic, validated tools, treats model and report as one cross-referenced thing (renames propagate, broken bindings are found and fixed, unused fields are provable), and works on the `.pbix` files you actually have, not just PBIP folders.
 
 ## Requirements
 

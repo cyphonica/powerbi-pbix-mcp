@@ -1,12 +1,13 @@
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO.Compression;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
 
 namespace SuperBiMcp.Services;
 
@@ -5119,27 +5120,49 @@ public sealed partial class ReportService
     }
 
     /// <summary>Extract a brand palette from a logo image: the most prominent, distinct, saturated
-    /// colours (background/near-white/near-black filtered out), most-used first. Cross-platform (ImageSharp).</summary>
+    /// colours (background/near-white/near-black filtered out), most-used first. Windows GDI+ via System.Drawing.</summary>
     private static string[] ExtractPalette(string imagePath, int n)
     {
-        using var image = Image.Load<Rgba32>(imagePath);
-        image.Mutate(c => c.Resize(new ResizeOptions { Size = new Size(160, 160), Mode = ResizeMode.Max }));
-        var buckets = new Dictionary<int, (long count, long r, long g, long b)>();
-        image.ProcessPixelRows(accessor =>
+        // GDI+ only exists on Windows under net8; off Windows degrade to "no palette" (the
+        // DesktopInterop convention) so GenerateTheme falls through to its other colour sources.
+        // 6.1 is the floor System.Drawing.Common declares, and what the analyzer wants proven.
+        if (!OperatingSystem.IsWindowsVersionAtLeast(6, 1)) return Array.Empty<string>();
+        using var source = new Bitmap(imagePath);
+        // fit inside 160x160 preserving aspect (ResizeMode.Max semantics: upscales small logos too)
+        double scale = Math.Min(160.0 / source.Width, 160.0 / source.Height);
+        int w = Math.Max(1, (int)Math.Round(source.Width * scale));
+        int h = Math.Max(1, (int)Math.Round(source.Height * scale));
+        using var image = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+        using (var gfx = Graphics.FromImage(image))
         {
-            for (int y = 0; y < accessor.Height; y++)
+            gfx.CompositingMode = CompositingMode.SourceCopy;         // keep source alpha; no blend with the blank canvas
+            gfx.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            gfx.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            using var attrs = new ImageAttributes();
+            attrs.SetWrapMode(WrapMode.TileFlipXY);                   // stop the resampler ghosting past the image edge
+            gfx.DrawImage(source, new Rectangle(0, 0, w, h), 0, 0, source.Width, source.Height, GraphicsUnit.Pixel, attrs);
+        }
+        var buckets = new Dictionary<int, (long count, long r, long g, long b)>();
+        var locked = image.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        try
+        {
+            var pixels = new byte[locked.Stride * h];                 // one bulk copy - never GetPixel per pixel
+            Marshal.Copy(locked.Scan0, pixels, 0, pixels.Length);
+            for (int y = 0; y < h; y++)
             {
-                var row = accessor.GetRowSpan(y);
-                for (int x = 0; x < row.Length; x++)
+                int row = y * locked.Stride;
+                for (int x = 0; x < w; x++)
                 {
-                    var p = row[x];
-                    if (p.A < 24) continue;                      // skip transparent
-                    int key = ((p.R >> 3) << 10) | ((p.G >> 3) << 5) | (p.B >> 3);   // 5-bit/channel bucket
-                    if (buckets.TryGetValue(key, out var v)) buckets[key] = (v.count + 1, v.r + p.R, v.g + p.G, v.b + p.B);
-                    else buckets[key] = (1, p.R, p.G, p.B);
+                    int i = row + x * 4;                              // Format32bppArgb lays out BGRA in memory
+                    byte b = pixels[i], g = pixels[i + 1], r = pixels[i + 2], a = pixels[i + 3];
+                    if (a < 24) continue;                             // skip transparent
+                    int key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);   // 5-bit/channel bucket
+                    if (buckets.TryGetValue(key, out var v)) buckets[key] = (v.count + 1, v.r + r, v.g + g, v.b + b);
+                    else buckets[key] = (1, r, g, b);
                 }
             }
-        });
+        }
+        finally { image.UnlockBits(locked); }
         (long count, double r, double g, double b) Avg(KeyValuePair<int, (long count, long r, long g, long b)> kv)
             => (kv.Value.count, (double)kv.Value.r / kv.Value.count, (double)kv.Value.g / kv.Value.count, (double)kv.Value.b / kv.Value.count);
         bool Brandy((long count, double r, double g, double b) c)
@@ -8399,7 +8422,7 @@ public sealed partial class ReportService
         {
             session.PendingResources[themePartName!] = themeBytes;
             // a tier-accurate rebuild swaps the theme: keep ONLY the chosen palette base theme part, so the
-            // starter's stale CY24SU06.json (or any other BaseThemes/*.json) is dropped on Save.
+            // starter's stale SuperBiBase.json (or any other BaseThemes/*.json) is dropped on Save.
             session.KeepOnlyBaseThemePart = themePartName;
         }
         session.Dirty = true;

@@ -21,7 +21,7 @@ namespace SuperBiMcp;
 /// config is a nested-as-escaped-string at the report, section and visual levels; queryRef strings are
 /// "Table.Field"; the prototypeQuery Select Name equals the projection queryRef (that string IS the bind); a
 /// cross-table visual carries a From alias per table. Every builder is defensive: a visual whose inputs are
-/// missing is skipped, never emitted half-formed. The CY24SU06 theme + resourcePackages are preserved.
+/// missing is skipped, never emitted half-formed. The SuperBiBase theme + resourcePackages are preserved.
 /// </summary>
 public static class ReportLayoutBuilder
 {
@@ -39,13 +39,13 @@ public static class ReportLayoutBuilder
 
     /// <summary>The built-in base theme the generated report binds to. Power BI Desktop's renderer requires a
     /// current theme (it reads themeCurrent.customTheme on load and throws "Cannot read properties of undefined
-    /// (reading 'customTheme')" when the report declares none). CY24SU06 is a stock base theme shipped by the
-    /// 2.147 (RS) / 2.151 engines, so it resolves on open; the .json is also folded into the package as a
-    /// static resource (see StageTheme) so the report is self-contained.</summary>
-    public const string BaseThemeName = "CY24SU06";
+    /// (reading 'customTheme')" when the report declares none). SuperBiBase is an original base theme we
+    /// author and own (Resources/SuperBiBase.json); the .json is folded into the package as a static resource
+    /// (see StageTheme), so the report is self-contained and the name resolves from the embedded part.</summary>
+    public const string BaseThemeName = "SuperBiBase";
 
     /// <summary>The pbix part path of the bundled base theme, relative to the report folder. Place the theme
-    /// bytes at <c>&lt;name&gt;.Report/StaticResources/SharedResources/BaseThemes/CY24SU06.json</c> in the PBIP
+    /// bytes at <c>&lt;name&gt;.Report/StaticResources/SharedResources/BaseThemes/SuperBiBase.json</c> in the PBIP
     /// and PbixCompiler folds it to this part. The Layout's resourcePackages references the same path.</summary>
     public const string ThemeStaticResourceRelPath = "SharedResources/BaseThemes/" + BaseThemeName + ".json";
 
@@ -53,17 +53,18 @@ public static class ReportLayoutBuilder
     //
     // Power BI renders colours from the REGISTERED base theme part (Report/StaticResources/.../BaseThemes/<name>
     // .json) and ignores an inline themeCollection.customTheme. So a palette is applied by MERGING its colours
-    // INTO the CY24SU06 base theme JSON and embedding THAT as the active base theme part (named CY24SU06-<Palette>
-    // so it is unambiguous), referenced from themeCollection.baseTheme. Only the colour keys are overridden;
-    // every structural/visualStyles property of CY24SU06 is preserved (that is what makes the report render).
-    // "Default" embeds the plain CY24SU06 byte-for-byte (the unchanged current look).
+    // INTO the SuperBiBase base theme JSON and embedding THAT as the active base theme part (named
+    // SuperBiBase-<Palette> so it is unambiguous), referenced from themeCollection.baseTheme. Only the colour
+    // keys are overridden; every structural/visualStyles property of SuperBiBase is preserved (that is what
+    // makes the report render). "Default" embeds the plain SuperBiBase byte-for-byte (the unchanged base look).
 
     /// <summary>One palette in the library: a stable key, a display name, and its primary colour (for a swatch).
-    /// The default carries no resource (it IS the bare CY24SU06 base theme).</summary>
+    /// The default carries no resource (it IS the bare SuperBiBase base theme).</summary>
     public sealed record ThemeEntry(string Key, string DisplayName, string PrimaryColor, string? ResourceName);
 
-    /// <summary>A resolved active base theme: the theme NAME (e.g. CY24SU06 or CY24SU06-Ocean), the part path it
-    /// is embedded at, and its JSON bytes (plain CY24SU06 for Default, or CY24SU06 colour-merged with a palette).</summary>
+    /// <summary>A resolved active base theme: the theme NAME (e.g. SuperBiBase or SuperBiBase-Ocean), the part
+    /// path it is embedded at, and its JSON bytes (plain SuperBiBase for Default, or SuperBiBase colour-merged
+    /// with a palette).</summary>
     public sealed record StagedTheme(string ThemeName, string PartName, byte[] Bytes);
 
     // the top-level colour keys a palette overrides on the base theme (structural keys are left untouched)
@@ -75,7 +76,7 @@ public static class ReportLayoutBuilder
 
     private static readonly IReadOnlyList<ThemeEntry> Themes = new List<ThemeEntry>
     {
-        new("default",  "Default",  "#118DFF", null),                  // plain CY24SU06 base (teal), no override
+        new("default",  "Default",  "#2E6EA6", null),                  // plain SuperBiBase (blue), no override
         new("ocean",    "Ocean",    "#0B6FA4", "theme-ocean.json"),
         new("graphite", "Graphite", "#3C4858", "theme-graphite.json"),
         new("emerald",  "Emerald",  "#0E8A5F", "theme-emerald.json"),
@@ -102,14 +103,14 @@ public static class ReportLayoutBuilder
     /// <summary>
     /// Resolve the ACTIVE base theme to embed. When <paramref name="brandColor"/> is a valid hex it WINS over
     /// <paramref name="themeKey"/>: a full cohesive palette is generated from that brand colour and merged into
-    /// CY24SU06 (named CY24SU06-Brand). Otherwise: for Default the plain CY24SU06 bytes (unchanged); for a preset
-    /// palette key, CY24SU06 colour-merged with that palette (CY24SU06-&lt;Palette&gt;). Both <see cref="Build"/>
-    /// and the Http build paths call this with the SAME args so the embedded part, filename and the
-    /// themeCollection.baseTheme reference always agree. Falls back to plain CY24SU06 on any failure.
+    /// SuperBiBase (named SuperBiBase-Brand). Otherwise: for Default the plain SuperBiBase bytes (unchanged);
+    /// for a preset palette key, SuperBiBase colour-merged with that palette (SuperBiBase-&lt;Palette&gt;). Both
+    /// <see cref="Build"/> and the Http build paths call this with the SAME args so the embedded part, filename
+    /// and the themeCollection.baseTheme reference always agree. Falls back to plain SuperBiBase on any failure.
     /// </summary>
     public static StagedTheme ResolveStagedTheme(string? themeKey, string? brandColor = null)
     {
-        byte[] baseBytes = LoadEmbeddedTheme();   // CY24SU06.json
+        byte[] baseBytes = LoadEmbeddedTheme();   // SuperBiBase.json
 
         // brand colour wins: merge a generated palette object into the base theme
         var brandPalette = NormalizeHex(brandColor) is string hex ? BrandPaletteObject(hex) : null;
@@ -117,7 +118,7 @@ public static class ReportLayoutBuilder
             return MergePaletteIntoBase(baseBytes, brandPalette, "Brand") ?? new StagedTheme(BaseThemeName, PartPathFor(BaseThemeName), baseBytes);
 
         var entry = ResolveTheme(themeKey);
-        if (entry.ResourceName == null)   // Default -> plain CY24SU06, byte-for-byte
+        if (entry.ResourceName == null)   // Default -> plain SuperBiBase, byte-for-byte
             return new StagedTheme(BaseThemeName, PartPathFor(BaseThemeName), baseBytes);
 
         var palette = LoadPaletteJson(entry.ResourceName);
@@ -125,8 +126,8 @@ public static class ReportLayoutBuilder
         return MergePaletteIntoBase(baseBytes, palette, entry.DisplayName) ?? new StagedTheme(BaseThemeName, PartPathFor(BaseThemeName), baseBytes);
     }
 
-    /// <summary>Merge a palette colour object into the CY24SU06 base theme (colour keys only; structure kept) and
-    /// rename it CY24SU06-&lt;suffix&gt;. Returns null on parse failure.</summary>
+    /// <summary>Merge a palette colour object into the SuperBiBase base theme (colour keys only; structure kept)
+    /// and rename it SuperBiBase-&lt;suffix&gt;. Returns null on parse failure.</summary>
     private static StagedTheme? MergePaletteIntoBase(byte[] baseBytes, JsonObject palette, string suffix)
     {
         try
@@ -155,7 +156,7 @@ public static class ReportLayoutBuilder
     public static IReadOnlyList<string> PaletteFromBrandColor(string? brandHex)
     {
         string? hex = NormalizeHex(brandHex);
-        if (hex == null) return new[] { "#118DFF" };
+        if (hex == null) return new[] { "#2E6EA6" };
         var (h, s, l) = HexToHsl(hex);
         var ramp = new List<string> { hex };   // [0] = the exact brand colour
         // a spread of lightnesses around the brand, with a gentle hue rotation, for distinct but harmonious series
@@ -246,7 +247,7 @@ public static class ReportLayoutBuilder
     }
 
     /// <summary>The dataColors of a resolved (staged) theme - the palette applied EXPLICITLY to every chart.
-    /// Read from the merged theme bytes so it always matches the embedded theme (Default = CY24SU06 dataColors).
+    /// Read from the merged theme bytes so it always matches the embedded theme (Default = SuperBiBase dataColors).
     /// Falls back to a single safe colour if the theme cannot be parsed.</summary>
     private static IReadOnlyList<string> PaletteColorsOf(StagedTheme staged)
     {
@@ -260,7 +261,7 @@ public static class ReportLayoutBuilder
             }
         }
         catch { }
-        return new[] { "#118DFF" };
+        return new[] { "#2E6EA6" };
     }
 
     /// <summary>The pbix part path for a given base theme name.</summary>
@@ -324,7 +325,7 @@ public static class ReportLayoutBuilder
     /// name="tier"/>: "free" -> a single teaser page; "personal*" -> standard multi-page;
     /// "pro"/"agency*" -> premium (delta/sparkline cards, share + ranked tables, Growth and Variance, a cross-
     /// dimension matrix, and a Data Quality page for +validation tiers). Returns a blank-but-valid one-page
-    /// Layout when the spec has nothing to chart, so the caller always gets an openable report. The CY24SU06
+    /// Layout when the spec has nothing to chart, so the caller always gets an openable report. The SuperBiBase
     /// theme + resourcePackages are always present.
     /// </summary>
     public static string Build(string specJson, string tier, string? themeKey = null, string? title = null,
@@ -635,7 +636,7 @@ public static class ReportLayoutBuilder
     }
 
     /// <summary>The report-level config object: points themeCollection.baseTheme at the ACTIVE base theme part
-    /// (CY24SU06 or the colour-merged CY24SU06-&lt;Palette&gt;), which the renderer reads on load (required, or it
+    /// (SuperBiBase or the colour-merged SuperBiBase-&lt;Palette&gt;), which the renderer reads on load (required, or it
     /// throws on themeCurrent.customTheme). No inline customTheme - Power BI ignores that and renders from the
     /// registered base theme part, so the palette must live IN the embedded base theme (see ResolveStagedTheme).</summary>
     private static JsonObject BuildReportConfig(string themeName)
@@ -1803,7 +1804,7 @@ public static class ReportLayoutBuilder
     // -------------------------------------------------------------------- theme staging
 
     /// <summary>
-    /// Write the ACTIVE base theme (plain CY24SU06 for Default, or the colour-merged CY24SU06-&lt;Palette&gt; for a
+    /// Write the ACTIVE base theme (plain SuperBiBase for Default, or the colour-merged SuperBiBase-&lt;Palette&gt; for a
     /// palette key) into the PBIP's report folder so PbixCompiler folds it into the package as the
     /// <c>Report/StaticResources/SharedResources/BaseThemes/&lt;themeName&gt;.json</c> part the Layout references.
     /// Best-effort and idempotent: a missing report folder or write failure is swallowed so it never breaks a
@@ -1850,7 +1851,7 @@ public static class ReportLayoutBuilder
         catch { return null; }
     }
 
-    /// <summary>The bytes of the embedded CY24SU06 base theme.</summary>
+    /// <summary>The bytes of the embedded SuperBiBase base theme.</summary>
     private static byte[] LoadEmbeddedTheme()
     {
         var asm = typeof(ReportLayoutBuilder).Assembly;

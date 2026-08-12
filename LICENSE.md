@@ -6,7 +6,7 @@ FSL-1.1-ALv2
 
 ## Notice
 
-Copyright 2026 DaxOps
+Copyright 2026 Cyphonica Security Services Ltd
 
 ## Terms and Conditions
 

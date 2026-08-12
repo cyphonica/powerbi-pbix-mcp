@@ -343,7 +343,7 @@ public sealed class FabricRestTests
             File.WriteAllText(Path.Combine(sm, ".platform"), "{}");                       // metadata - excluded
             File.WriteAllText(Path.Combine(rp, "definition.pbir"), "{\"version\":\"1.0\"}");
             File.WriteAllText(Path.Combine(rp, "report.json"), "{}");
-            File.WriteAllText(Path.Combine(rp, "StaticResources", "SharedResources", "BaseThemes", "CY24SU06.json"), "{}");
+            File.WriteAllText(Path.Combine(rp, "StaticResources", "SharedResources", "BaseThemes", "SuperBiBase.json"), "{}");
             File.WriteAllText(Path.Combine(rp, ".platform"), "{}");                        // metadata - excluded
             File.WriteAllText(Path.Combine(rp, ".pbi", "localSettings.json"), "{}");       // local cache - excluded
 
@@ -357,7 +357,7 @@ public sealed class FabricRestTests
             var rpParts = FabricRest.ReportParts(rp);
             Assert.Contains("definition.pbir", rpParts.Select(p => p.path));
             Assert.Contains("report.json", rpParts.Select(p => p.path));
-            Assert.Contains("StaticResources/SharedResources/BaseThemes/CY24SU06.json", rpParts.Select(p => p.path));
+            Assert.Contains("StaticResources/SharedResources/BaseThemes/SuperBiBase.json", rpParts.Select(p => p.path));
             Assert.DoesNotContain(".platform", rpParts.Select(p => p.path));
             Assert.DoesNotContain(rpParts, p => p.path.StartsWith(".pbi/", StringComparison.OrdinalIgnoreCase));
         }

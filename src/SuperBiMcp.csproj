@@ -24,10 +24,10 @@
     <!-- the authoritative Power BI report-theme JSON schema drives the visual-property registry (PropertyCatalog),
          loaded from the embedded resource at runtime -->
     <EmbeddedResource Include="Resources\reportThemeSchema-2.155.json" />
-    <!-- a stock base theme (CY24SU06) folded into every generated .pbix so the report renders (the renderer
-         requires a current theme; see ReportLayoutBuilder) -->
-    <EmbeddedResource Include="Resources\CY24SU06.json" />
-    <!-- the selectable palette library (applied as an inline customTheme over the CY24SU06 base) -->
+    <!-- SuperBiBase, an original base theme we author and own, folded into every generated .pbix so the
+         report renders (the renderer requires a current theme; see ReportLayoutBuilder) -->
+    <EmbeddedResource Include="Resources\SuperBiBase.json" />
+    <!-- the selectable palette library (applied as an inline customTheme over the SuperBiBase base) -->
     <EmbeddedResource Include="Resources\theme-ocean.json" />
     <EmbeddedResource Include="Resources\theme-graphite.json" />
     <EmbeddedResource Include="Resources\theme-emerald.json" />
@@ -41,7 +41,9 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
     <PackageReference Include="Microsoft.AnalysisServices.NetCore.retail.amd64" Version="19.84.1" />
     <PackageReference Include="Microsoft.AnalysisServices.AdomdClient.NetCore.retail.amd64" Version="19.84.1" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <!-- logo decode/resize for palette extraction. MIT + Windows-only GDI+ is fine: the engine is Windows-only
+         anyway (replaced SixLabors.ImageSharp, whose 3.x split licence blocks going source-available). -->
+    <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
     <!-- SQL connector ADO.NET drivers (one per dialect; resolved by the SqlConnector dialect -> provider map) -->
     <PackageReference Include="Npgsql" Version="8.0.9" />
     <PackageReference Include="MySqlConnector" Version="2.4.0" />
