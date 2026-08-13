@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+.git/
+.github/
+tests/
+docs/
+launcher/
+examples/
+samples/
+*.md
+.mcp.json.example
