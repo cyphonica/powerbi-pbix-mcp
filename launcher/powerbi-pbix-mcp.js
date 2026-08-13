@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /*
- * Super BI MCP launcher.
+ * Super BI MCP launcher (repo: cyphonica/powerbi-pbix-mcp).
  *
  * On first run it downloads the self-contained Windows engine (SuperBiMcp.exe) from the tagged
- * GitHub Release, verifies its SHA-256, and caches it under ~/.superbi-mcp/<version>/. Every run
+ * GitHub Release, verifies its SHA-256, and caches it under ~/.powerbi-pbix-mcp/<version>/. Every run
  * spawns that engine and forwards stdio - the engine IS the MCP server (JSON-RPC over stdin/stdout),
- * so an MCP client can launch this with `npx github:cyphonica/superbi-mcp`.
+ * so an MCP client can launch this with `npx github:cyphonica/powerbi-pbix-mcp`.
  *
  * Windows only (the engine drives the local Power BI / Analysis Services stack). Set
  * SUPERBI_MCP_EXE to an existing SuperBiMcp.exe to skip the download (dev / offline / air-gapped).
@@ -21,10 +21,10 @@ const { spawn } = require('child_process');
 
 const VERSION = 'v0.1.0';
 const ASSET = 'SuperBiMcp.exe';
-const URL = `https://github.com/cyphonica/superbi-mcp/releases/download/${VERSION}/${ASSET}`;
+const URL = `https://github.com/cyphonica/powerbi-pbix-mcp/releases/download/${VERSION}/${ASSET}`;
 const SHA256 = 'f85c0d1601d54fd579e3e667123d4727d4aaabeb5be9a06449a643a55a7c75da';
 
-function log(msg) { process.stderr.write(`[superbi-mcp] ${msg}\n`); }
+function log(msg) { process.stderr.write(`[powerbi-pbix-mcp] ${msg}\n`); }
 
 function sha256(file) {
   return new Promise((resolve, reject) => {
@@ -36,7 +36,7 @@ function sha256(file) {
 function download(url, dest, redirects = 0) {
   return new Promise((resolve, reject) => {
     if (redirects > 8) return reject(new Error('too many redirects'));
-    https.get(url, { headers: { 'User-Agent': 'superbi-mcp-launcher' } }, res => {
+    https.get(url, { headers: { 'User-Agent': 'powerbi-pbix-mcp-launcher' } }, res => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
         res.resume();
         return resolve(download(res.headers.location, dest, redirects + 1));
@@ -57,7 +57,7 @@ async function ensureExe() {
     if (!fs.existsSync(override)) throw new Error(`SUPERBI_MCP_EXE points at a missing file: ${override}`);
     return override;
   }
-  const dir = path.join(os.homedir(), '.superbi-mcp', VERSION);
+  const dir = path.join(os.homedir(), '.powerbi-pbix-mcp', VERSION);
   const exe = path.join(dir, ASSET);
   if (fs.existsSync(exe) && (await sha256(exe)) === SHA256) return exe;
 

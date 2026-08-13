@@ -42,21 +42,21 @@ The short version: Microsoft's official server stops at the semantic model, and 
   "mcpServers": {
     "super-bi": {
       "command": "npx",
-      "args": ["-y", "github:cyphonica/superbi-mcp"]
+      "args": ["-y", "github:cyphonica/powerbi-pbix-mcp"]
     }
   }
 }
 ```
 
-The first launch downloads the self-contained engine `SuperBiMcp.exe` (~109 MB) from the [latest release](https://github.com/cyphonica/superbi-mcp/releases), verifies its SHA-256, and caches it under `~/.superbi-mcp/`; later launches reuse the cache. Set `SUPERBI_MCP_EXE` to an existing `SuperBiMcp.exe` to skip the download.
+The first launch downloads the self-contained engine `SuperBiMcp.exe` (~109 MB) from the [latest release](https://github.com/cyphonica/powerbi-pbix-mcp/releases), verifies its SHA-256, and caches it under `~/.powerbi-pbix-mcp/`; later launches reuse the cache. Set `SUPERBI_MCP_EXE` to an existing `SuperBiMcp.exe` to skip the download.
 
-Prefer a plain binary? Download `SuperBiMcp-win-x64.zip` from the [release](https://github.com/cyphonica/superbi-mcp/releases), extract, and point your client's `command` straight at `SuperBiMcp.exe`.
+Prefer a plain binary? Download `SuperBiMcp-win-x64.zip` from the [release](https://github.com/cyphonica/powerbi-pbix-mcp/releases), extract, and point your client's `command` straight at `SuperBiMcp.exe`.
 
 **Build from source** (needs the .NET 8 SDK):
 
 ```bash
-git clone https://github.com/cyphonica/superbi-mcp
-cd superbi-mcp
+git clone https://github.com/cyphonica/powerbi-pbix-mcp
+cd powerbi-pbix-mcp
 dotnet build src/SuperBiMcp.csproj -c Release
 ```
 
