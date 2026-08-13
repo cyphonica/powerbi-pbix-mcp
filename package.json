@@ -27,7 +27,7 @@
   "license": "SEE LICENSE IN LICENSE.md",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cyphonica/powerbi-pbix-mcp.git"
+    "url": "git+https://github.com/cyphonica/powerbi-pbix-mcp.git"
   },
   "homepage": "https://github.com/cyphonica/powerbi-pbix-mcp#readme"
 }
