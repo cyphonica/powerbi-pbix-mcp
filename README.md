@@ -47,7 +47,7 @@ The short version: Microsoft's official server stops at the semantic model, and 
   "mcpServers": {
     "super-bi": {
       "command": "npx",
-      "args": ["-y", "github:cyphonica/powerbi-pbix-mcp"]
+      "args": ["-y", "powerbi-pbix-mcp"]
     }
   }
 }

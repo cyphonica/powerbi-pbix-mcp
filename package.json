@@ -1,6 +1,7 @@
 {
   "name": "powerbi-pbix-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "mcpName": "io.github.cyphonica/powerbi-pbix-mcp",
   "description": "Power BI MCP server - local .pbix / semantic-model / report / Power Query authoring for AI agents, on your machine.",
   "bin": {
     "powerbi-pbix-mcp": "launcher/powerbi-pbix-mcp.js"
