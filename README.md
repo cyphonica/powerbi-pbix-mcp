@@ -1,5 +1,10 @@
 # Super BI MCP
 
+[![Release](https://img.shields.io/github/v/release/cyphonica/powerbi-pbix-mcp?color=2E6EA6)](https://github.com/cyphonica/powerbi-pbix-mcp/releases)
+[![License: FSL-1.1-ALv2](https://img.shields.io/badge/license-FSL--1.1--ALv2-blue)](LICENSE.md)
+![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6)
+![Tools: 490](https://img.shields.io/badge/tools-490-2F9D68)
+
 An MCP server that gives AI agents **full local Power BI authoring** - the semantic model, the report, and Power Query M - by editing `.pbix` and PBIP/PBIR files directly. **490 tools**, backed by ~1,800 automated tests.
 
 Point Claude (or any MCP client) at it and the agent can build a model, write the DAX, lay out the report pages and visuals, transform the Power Query, lint and auto-fix best-practice violations, prove the RLS actually filters, rename a column across the model *and* every report binding in one atomic call, screenshot the rendered result out of a running Power BI Desktop, **evaluate DAX and read table rows out of a closed `.pbix` with no Fabric**, **edit a closed `.pbit` template's model with no Desktop at all**, and hand you back a finished `.pbix` - all on your machine.
