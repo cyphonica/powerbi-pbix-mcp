@@ -30,29 +30,37 @@ The short version: Microsoft's official server stops at the semantic model, and 
 ## Requirements
 
 - Windows x64 (the engine drives the Analysis Services client libraries and, for live-model work, Power BI Desktop)
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- Power BI Desktop - needed for live model editing, bulk refresh, and bake; report-layer and file-level tools work without it
+- Power BI Desktop - needed for live model editing, bulk refresh, bake, and the engine-backed offline `.pbix` tools; report-layer and file-level tools work without it
+- Node.js 16+ to install via `npx` (below), **or** the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) to build from source
 
-## Quick start
+## Install
 
-```bash
-git clone <this repo>
-cd super-bi-mcp
-dotnet build src/SuperBiMcp.csproj -c Release
-```
-
-Register it with your MCP client (Claude Code example, `.mcp.json`):
+**One command (recommended)** - no .NET SDK needed. Add this to your MCP client's config (Claude Code / Claude Desktop `.mcp.json`, Cursor, etc.):
 
 ```json
 {
   "mcpServers": {
     "super-bi": {
-      "command": "dotnet",
-      "args": ["<absolute path>/src/bin/Release/net8.0/SuperBiMcp.dll"]
+      "command": "npx",
+      "args": ["-y", "github:cyphonica/superbi-mcp"]
     }
   }
 }
 ```
+
+The first launch downloads the self-contained engine `SuperBiMcp.exe` (~109 MB) from the [latest release](https://github.com/cyphonica/superbi-mcp/releases), verifies its SHA-256, and caches it under `~/.superbi-mcp/`; later launches reuse the cache. Set `SUPERBI_MCP_EXE` to an existing `SuperBiMcp.exe` to skip the download.
+
+Prefer a plain binary? Download `SuperBiMcp-win-x64.zip` from the [release](https://github.com/cyphonica/superbi-mcp/releases), extract, and point your client's `command` straight at `SuperBiMcp.exe`.
+
+**Build from source** (needs the .NET 8 SDK):
+
+```bash
+git clone https://github.com/cyphonica/superbi-mcp
+cd superbi-mcp
+dotnet build src/SuperBiMcp.csproj -c Release
+```
+
+then register the built DLL with `"command": "dotnet"`, `"args": ["<absolute path>/src/bin/Release/net8.0/SuperBiMcp.dll"]`.
 
 Then ask your agent to open a `.pbix` and get to work. `docs/automation-capabilities/GENERATED-TOOL-INDEX.md` lists every tool; regenerate it any time with `SuperBiMcp capability-map`.
 

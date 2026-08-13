@@ -1,0 +1,33 @@
+{
+  "name": "superbi-mcp",
+  "version": "0.1.0",
+  "description": "Power BI MCP server - local .pbix / semantic-model / report / Power Query authoring for AI agents, on your machine.",
+  "bin": {
+    "superbi-mcp": "bin/superbi-mcp.js"
+  },
+  "files": [
+    "bin/"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "os": [
+    "win32"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "power-bi",
+    "powerbi",
+    "pbix",
+    "dax",
+    "power-query",
+    "ai-agents"
+  ],
+  "license": "SEE LICENSE IN LICENSE.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cyphonica/superbi-mcp.git"
+  },
+  "homepage": "https://github.com/cyphonica/superbi-mcp#readme"
+}
