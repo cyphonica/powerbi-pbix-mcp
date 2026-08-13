@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "description": "Power BI MCP server - local .pbix / semantic-model / report / Power Query authoring for AI agents, on your machine.",
   "bin": {
-    "superbi-mcp": "bin/superbi-mcp.js"
+    "superbi-mcp": "launcher/superbi-mcp.js"
   },
   "files": [
-    "bin/"
+    "launcher/"
   ],
   "engines": {
     "node": ">=16"
